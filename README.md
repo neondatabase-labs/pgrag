@@ -120,7 +120,7 @@ select neon_ai.embedding_bge_small_en_v15('The quick brown fox jumps over the la
 
 #### `rerank_score_jina_v1_tiny_en(text, text) -> real`
 
-Locally rerank original texts using a small (33M param) model:
+Locally tokenize + rerank original texts using a small (33M param) model:
 
 ```sql
 select neon_ai.rerank_score_jina_v1_tiny_en('The quick brown fox jumps over the lazy dog', 'The quick brown hamster jumps over the lazy cat');
