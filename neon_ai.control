@@ -1,0 +1,6 @@
+comment = 'neon_ai:  Created by pgrx'
+default_version = '@CARGO_VERSION@'
+module_pathname = '$libdir/neon_ai'
+relocatable = false
+superuser = true
+requires = 'vector'
