@@ -33,7 +33,12 @@ Highly experimental extension to support RAG within Postgres by exposing some re
 
 ## Installation
 
-With Rust installed:
+You'll need to uncompress the model files:
+
+* `cd bge_small_en_v15 && tar xzf model.onnx.tar.gz && cd ..`
+* `cd jina_reranker_v1_tiny_en && tar xzf model.onnx.tar.gz && cd ..`
+
+Then, with Rust installed:
 
 * `cargo install --locked cargo-pgrx@0.11.3`
 * `cargo pgrx init`
