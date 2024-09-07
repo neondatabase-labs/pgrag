@@ -294,4 +294,4 @@ from reranked;
 
 ## License
 
-This software is released under the [Apache 2.0 license](LICENSE). Third-party code and data available under their respective licenses.
+This software is released under the [Apache 2.0 license](LICENSE). Third-party code and data are provided under their respective licenses.
