@@ -12,17 +12,20 @@ Highly experimental extension to support RAG within Postgres by exposing some re
 
 * HTML conversion to Markdown using https://github.com/letmutex/htmd.
 
+
 ### Text chunking
 
 * Text chunking by character count using https://github.com/benbrandt/text-splitter.
 
 * Text chunking by token count (tokenising for https://huggingface.co/Xenova/bge-small-en-v1.5), again using https://github.com/benbrandt/text-splitter.
 
+
 ### Local embedding and reranking models
 
 * Local embedding generation with 33M parameter model https://huggingface.co/Xenova/bge-small-en-v1.5 using https://github.com/Anush008/fastembed-rs.
 
 * Reranking with 33M parameter model https://huggingface.co/jinaai/jina-reranker-v1-tiny-en using https://github.com/Anush008/fastembed-rs.
+
 
 ### Remote embedding and chat models
 
@@ -62,6 +65,7 @@ make install
 create extension if not exists neon_ai cascade;  -- `cascade` installs pgvector dependency
 ```
 
+
 #### `markdown_from_html(text) -> text`
 
 Locally convert HTML to Markdown:
@@ -70,6 +74,7 @@ Locally convert HTML to Markdown:
 select neon_ai.markdown_from_html('<html><body><h1>Title</h1><p>A <i>very</i> short paragraph</p><p>Another paragraph</p></body></html>');
 --  '# Title\n\nA _very_ short paragraph\n\nAnother paragraph'
 ```
+
 
 #### `text_from_pdf(bytea) -> text`
 
@@ -81,6 +86,7 @@ select neon_ai.text_from_pdf(decode(:'contents', 'base64'));
 -- 'Text content of PDF'
 ```
 
+
 #### `text_from_docx(bytea) -> text`
 
 Locally extract text from a .docx file:
@@ -91,6 +97,7 @@ select neon_ai.text_from_docx(decode(:'contents', 'base64'));
 -- 'Text content of .docx'
 ```
 
+
 #### `chunks_by_character_count(text, max_characters integer, max_overlap_characters integer) -> text[]`
 
 Locally chunk text using character count, with max and overlap:
@@ -99,6 +106,7 @@ Locally chunk text using character count, with max and overlap:
 select neon_ai.chunks_by_character_count('The quick brown fox jumps over the lazy dog', 20, 4);
 -- {"The quick brown fox","fox jumps over the","the lazy dog"}
 ```
+
 
 #### `chunks_by_token_count_bge_small_en_v15(text, max_tokens integer, max_overlap_tokens integer) -> text[]`
 
@@ -109,6 +117,7 @@ select neon_ai.chunks_by_token_count_bge_small_en_v15('The quick brown fox jumps
 -- {"The quick brown fox","fox jumps over the","the lazy dog"}
 ```
 
+
 #### `embedding_bge_small_en_v15(text) -> vector(384)`
 
 Locally tokenize + generate embeddings using a small (33M param) model:
@@ -117,6 +126,7 @@ Locally tokenize + generate embeddings using a small (33M param) model:
 select neon_ai.embedding_bge_small_en_v15('The quick brown fox jumps over the lazy dog');
 -- [-0.1047543,-0.02242211,-0.0126493685, ...]
 ```
+
 
 #### `rerank_score_jina_v1_tiny_en(text, text) -> real`
 
@@ -130,6 +140,7 @@ select neon_ai.rerank_score_jina_v1_tiny_en('The quick brown fox jumps over the 
 -- 1.4725753
 ```
 
+
 #### `openai_set_api_key(text)` and `openai_get_api_key() -> text`
 
 Store and retrieve your OpenAI API key:
@@ -140,6 +151,7 @@ select neon_ai.openai_get_api_key();
 -- 'sk-proj-...'
 ```
 
+
 #### `openai_text_embedding_3_small(text) -> vector(1536)`, `openai_text_embedding_3_large(text) -> vector(3072)`, `openai_text_embedding_ada_002(text) -> vector(1536)`, and `openai_text_embedding(model text, text) -> vector`
 
 Call out to OpenAI embeddings API (makes network request):
@@ -149,6 +161,7 @@ select neon_ai.openai_text_embedding_3_small('The quick brown fox jumps over the
 -- {-0.020836005,-0.016921125,-0.00450666, ...}
 ```
 
+
 #### `openai_chat_completion(json) -> json`
 
 Call out to OpenAI chat/completions API (makes network request):
@@ -157,6 +170,7 @@ Call out to OpenAI chat/completions API (makes network request):
 select neon_ai.openai_chat_completion('{"model":"gpt-4o-mini","messages":[{"role":"system","content":"you are a helpful assistant"},{"role":"user","content":"hi!"}]}');
 -- {"id": "chatcmpl-...", "model": "gpt-4o-mini-2024-07-18", "usage": {"total_tokens": 27, "prompt_tokens": 18, "completion_tokens": 9}, "object": "chat.completion", "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hello! How can I assist you today?", "refusal": null}, "logprobs": null, "finish_reason": "stop"}], "created": 1724765541, "system_fingerprint": "fp_..."}
 ```
+
 
 #### `fireworks_set_api_key(text)` and `fireworks_get_api_key() -> text`
 
@@ -168,6 +182,7 @@ select neon_ai.fireworks_get_api_key();
 -- 'fw_...'
 ```
 
+
 #### `fireworks_chat_completion(json) -> json`
 
 Call out to Fireworks.ai chat/completions API (makes network request):
@@ -176,6 +191,7 @@ Call out to Fireworks.ai chat/completions API (makes network request):
 select neon_ai.fireworks_chat_completion('{"model":"accounts/fireworks/models/llama-v3p1-8b-instruct","messages":[{"role":"system","content":"you are a helpful assistant"},{"role":"user","content":"hi!"}]}');
 --  {"choices":[{"finish_reason":"stop","index":0,"message":{"content":"Hi! How can I assist you today?","role":"assistant"}}],"created":1725362940,"id":"...","model":"accounts/fireworks/models/llama-v3p1-8b-instruct","object":"chat.completion","usage":{"completion_tokens":10,"prompt_tokens":23,"total_tokens":33}}
 ```
+
 
 ## End-to-end RAG example
 
@@ -196,7 +212,6 @@ insert into docs (blob) values (decode(:'contents','base64'));
 
 \set contents `base64 < /path/to/third.pdf`
 insert into docs (blob) values (decode(:'contents','base64'));
-
 
 drop table embeddings;
 create table embeddings
@@ -270,6 +285,7 @@ select neon_ai.openai_chat_completion(json_object(
 )) -> 'choices' -> 0 -> 'message' -> 'content' as answer
 from reranked;
 ```
+
 
 ## License
 
