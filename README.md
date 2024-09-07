@@ -59,6 +59,11 @@ make install
 * `cargo pgrx run`
 
 
+## Note: ORT patch
+
+The `ort` and `ort-sys` packages are drawn from a local source using `[patch.crates-io]` in `Cargo.toml` because (as at 2024-09-06) otherwise we end up with `ort` 2.0.0-rc.4 and `ort-sys` 2.0.0-rc.5, and this mismatch ends badly.
+
+
 ## Usage
 
 ```sql
