@@ -29,8 +29,8 @@ tokenizers = "0.19.1"
 ureq = { version = "2.9.7", features = ["json"] }
 
 [patch.crates-io]
-ort = { path = "ort-2.0.0-rc.5" }
-ort-sys = { path = "ort-2.0.0-rc.5/ort-sys" }
+ort = { path = "ort-2.0.0-rc.4" }
+ort-sys = { path = "ort-2.0.0-rc.4/ort-sys" }
 
 [dev-dependencies]
 pgrx-tests = "0.11.3"
