@@ -6,7 +6,7 @@ mod json_api;
 mod chunk;
 mod docx;
 mod fireworks;
-mod md;
+mod markdown;
 mod openai;
 mod pdf;
 
@@ -85,9 +85,13 @@ mod neon_ai {
     }
 
     extension_sql!(
-        "CREATE FUNCTION neon_ai.embedding_bge_small_en_v15(input text) RETURNS vector(384)
+        "CREATE FUNCTION neon_ai.embedding_for_passage_bge_small_en_v15(input text) RETURNS vector(384)
         LANGUAGE SQL IMMUTABLE STRICT AS $$
             SELECT neon_ai._embedding_bge_small_en_v15(input)::vector(384);
+        $$;
+        CREATE FUNCTION neon_ai.embedding_for_query_bge_small_en_v15(input text) RETURNS vector(384)
+        LANGUAGE SQL IMMUTABLE STRICT AS $$
+            SELECT neon_ai._embedding_bge_small_en_v15('Represent this sentence for searching relevant passages: ' || input)::vector(384);
         $$;",
         name = "embedding_bge_small_en_v15",
     );

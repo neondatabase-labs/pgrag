@@ -59,9 +59,25 @@ make install
 * `cargo pgrx run`
 
 
-## Note: ORT patch
+## Installation notes
 
-The `ort` and `ort-sys` packages are drawn from a local source using `[patch.crates-io]` in `Cargo.toml` because (as at 2024-09-06) otherwise we end up with `ort` 2.0.0-rc.4 and `ort-sys` 2.0.0-rc.5, and this mismatch ends badly.
+* The `ort` package supplies precompiled binaries for the ONNX runtime. On some platforms, this may give rise to `undefined symbol` errors. In that case, you'll need to compile an ONNX runtime (at v18) yourself. On Debian, that looks something like this:
+
+```bash
+apt-get update && apt-get install -y build-essential python3 python3-pip
+python3 -m pip install cmake
+wget https://github.com/microsoft/onnxruntime/archive/refs/tags/v1.18.1.tar.gz -O onnxruntime.tar.gz
+mkdir onnxruntime-src && cd onnxruntime-src && tar xzf ../onnxruntime.tar.gz --strip-components=1 -C .
+./build.sh --config Release --parallel --skip_submodule_sync --skip_tests --allow_running_as_root
+```
+
+And then when it comes to install the extension:
+
+```bash
+ORT_LIB_LOCATION=/home/user/onnxruntime-src/build/Linux cargo pgrx install --release
+```
+
+* The `ort` and `ort-sys` packages are drawn from a local folder using `[patch.crates-io]` in `Cargo.toml` because (as at 2024-09-06) otherwise we can end up with `ort` 2.0.0-rc.4 and `ort-sys` 2.0.0-rc.5, and this mismatch ends badly.
 
 
 ## Usage
@@ -123,13 +139,15 @@ select neon_ai.chunks_by_token_count_bge_small_en_v15('The quick brown fox jumps
 ```
 
 
-#### `embedding_bge_small_en_v15(text) -> vector(384)`
+#### `embedding_for_passage_bge_small_en_v15(text) -> vector(384)` and `embedding_for_query_bge_small_en_v15(text) -> vector(384)`
 
 Locally tokenize + generate embeddings using a small (33M param) model:
 
 ```sql
-select neon_ai.embedding_bge_small_en_v15('The quick brown fox jumps over the lazy dog');
+select neon_ai.embedding_for_passage_bge_small_en_v15('The quick brown fox jumps over the lazy dog');
 -- [-0.1047543,-0.02242211,-0.0126493685, ...]
+select neon_ai.embedding_for_query_bge_small_en_v15('What did the quick brown fox jump over?');
+-- [-0.09328926,-0.030567117,-0.027558783, ...]
 ```
 
 
@@ -138,8 +156,8 @@ select neon_ai.embedding_bge_small_en_v15('The quick brown fox jumps over the la
 Locally tokenize + rerank original texts using a small (33M param) model:
 
 ```sql
-select neon_ai.rerank_score_jina_v1_tiny_en('The quick brown fox jumps over the lazy dog', 'The quick brown hamster jumps over the lazy cat');
--- -2.5196652
+select neon_ai.rerank_score_jina_v1_tiny_en('The quick brown fox jumps over the lazy dog', 'What did the quick brown fox jump over?');
+-- -1.1093962
 
 select neon_ai.rerank_score_jina_v1_tiny_en('The quick brown fox jumps over the lazy dog', 'Never Eat Shredded Wheat');
 -- 1.4725753
@@ -237,7 +255,7 @@ with chunks as (
   from docs
 )
 insert into embeddings (doc_id, chunk, embedding) (
-  select id, chunk, neon_ai.embedding_bge_small_en_v15(chunk) from chunks
+  select id, chunk, neon_ai.embedding_for_passage_bge_small_en_v15(chunk) from chunks
 );
 ```
 
@@ -248,7 +266,7 @@ Let's query the embeddings and rerank the results (still all done locally).
 
 with naive_ordered as (
   select
-    id, doc_id, chunk, embedding <=> neon_ai.embedding_bge_small_en_v15('Represent this sentence for searching relevant passages: ' || :'query') as cosine_distance
+    id, doc_id, chunk, embedding <=> neon_ai.embedding_for_query_bge_small_en_v15(:'query') as cosine_distance
   from embeddings
   order by cosine_distance
   limit 10
@@ -265,7 +283,7 @@ Building on that, now we can also feed the query and top chunks to remote ChatGP
 
 with naive_ordered as (
   select
-    id, doc_id, chunk, embedding <=> neon_ai.embedding_bge_small_en_v15('Represent this sentence for searching relevant passages: ' || :'query') as cosine_distance
+    id, doc_id, chunk, embedding <=> neon_ai.embedding_for_query_bge_small_en_v15(:'query') as cosine_distance
   from embeddings
   order by cosine_distance
   limit 10
