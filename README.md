@@ -38,8 +38,9 @@ Experimental extension to support RAG within Postgres. Currently offers:
 First, you'll need to install `pgvector`. For example:
 
 ```
-git clone https://github.com/pgvector/pgvector.git
-cd pgvector
+wget https://github.com/pgvector/pgvector/archive/refs/tags/v0.7.4.tar.gz
+tar xvzf v0.7.4.tar.gz
+cd pgvector-0.7.4
 export PG_CONFIG=/path/to/pg_config  # should actually end with pg_config
 make
 make install
