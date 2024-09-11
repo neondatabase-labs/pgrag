@@ -1,9 +1,6 @@
 # Experimental Postgres extension for end-to-end Retrieval-Augmented Generation (RAG)
 
-
-Experimental extension to support RAG within Postgres by exposing some relevant Rust crates.
-
-Currently offers:
+Experimental extension to support RAG within Postgres. Currently offers:
 
 
 ### Text extraction and conversion
@@ -43,7 +40,7 @@ First, you'll need to install `pgvector`. For example:
 ```
 git clone https://github.com/pgvector/pgvector.git
 cd pgvector
-export PG_CONFIG=~/.pgrx/13.16/pgrx-install/bin/pg_config
+export PG_CONFIG=/path/to/pg_config  # should actually end with pg_config
 make
 make install
 ```
@@ -57,9 +54,9 @@ Then (with Rust installed):
 
 * `cargo install --locked cargo-pgrx@0.11.3`
 
-Finally, making sure PG_CONFIG points to the right place:
+Finally:
 
-* `cargo pgrx install --release`
+* `PG_CONFIG=/path/to/pg_config cargo pgrx install --release`
 
 
 ## Installation notes
