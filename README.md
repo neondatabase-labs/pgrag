@@ -8,25 +8,25 @@ Currently offers:
 
 ### Text extraction and conversion
 
-* Simple text extraction from PDF documents using https://github.com/jrmuizel/pdf-extract. Currently no OCR, and no support for complex layout or formatting.
+* Simple text extraction from PDF documents using [pdf-extract](https://github.com/jrmuizel/pdf-extract). Currently no OCR, and no support for complex layout or formatting.
 
-* Simple text extraction from .docx documents using https://github.com/cstkingkey/docx-rs (docx-rust). Currently no support for complex layout or formatting.
+* Simple text extraction from .docx documents using [docx-rs](https://github.com/cstkingkey/docx-rs) (docx-rust). Currently no support for complex layout or formatting.
 
-* HTML conversion to Markdown using https://github.com/letmutex/htmd.
+* HTML conversion to Markdown using [htmd](https://github.com/letmutex/htmd).
 
 
 ### Text chunking
 
-* Text chunking by character count using https://github.com/benbrandt/text-splitter.
+* Text chunking by character count using [text-splitter](https://github.com/benbrandt/text-splitter).
 
-* Text chunking by token count (tokenising for https://huggingface.co/Xenova/bge-small-en-v1.5 -- see below), again using https://github.com/benbrandt/text-splitter.
+* Text chunking by token count (tokenising for [bge-small-en-v1.5](https://huggingface.co/Xenova/bge-small-en-v1.5) -- see below), again using [text-splitter](https://github.com/benbrandt/text-splitter).
 
 
 ### Local embedding and reranking models
 
-* Local embedding generation with a 33M parameter model https://huggingface.co/Xenova/bge-small-en-v1.5 using https://github.com/Anush008/fastembed-rs.
+* Local tokenising + embedding generation with 33M parameter model [bge-small-en-v1.5](https://huggingface.co/Xenova/bge-small-en-v1.5) using [fastembed](https://github.com/Anush008/fastembed-rs).
 
-* Reranking with 33M parameter model https://huggingface.co/jinaai/jina-reranker-v1-tiny-en using https://github.com/Anush008/fastembed-rs.
+* Local tokenising + reranking with 33M parameter model [jina-reranker-v1-tiny-en](https://huggingface.co/jinaai/jina-reranker-v1-tiny-en) using [fastembed](https://github.com/Anush008/fastembed-rs).
 
 
 ### Remote embedding and chat models
@@ -38,17 +38,7 @@ Currently offers:
 
 ## Installation
 
-You'll need to uncompress the model files:
-
-* `cd bge_small_en_v15 && tar xzf model.onnx.tar.gz && cd ..`
-* `cd jina_reranker_v1_tiny_en && tar xzf model.onnx.tar.gz && cd ..`
-
-Then, with Rust installed:
-
-* `cargo install --locked cargo-pgrx@0.11.3`
-* `cargo pgrx init`
-
-You'll then need to install `pgvector` within each PGRX Postgres instance you'll use to run or test the extension. For each installed version (e.g. 13.16):
+First, you'll need to install `pgvector`. For example:
 
 ```
 git clone https://github.com/pgvector/pgvector.git
@@ -58,9 +48,18 @@ make
 make install
 ```
 
-Finally:
+Next, download the extension source, and uncompress the model files:
 
-* `cargo pgrx run`
+* `cd bge_small_en_v15 && tar xzf model.onnx.tar.gz && cd ..`
+* `cd jina_reranker_v1_tiny_en && tar xzf model.onnx.tar.gz && cd ..`
+
+Then (with Rust installed):
+
+* `cargo install --locked cargo-pgrx@0.11.3`
+
+Finally, making sure PG_CONFIG points to the right place:
+
+* `cargo pgrx install --release`
 
 
 ## Installation notes
