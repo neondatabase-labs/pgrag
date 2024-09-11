@@ -1,14 +1,16 @@
 # Experimental Postgres extension for end-to-end Retrieval-Augmented Generation (RAG)
 
 
-Highly experimental extension to support RAG within Postgres by exposing some relevant Rust crates. Currently offers:
+Experimental extension to support RAG within Postgres by exposing some relevant Rust crates.
+
+Currently offers:
 
 
-### Text extraction/conversion
+### Text extraction and conversion
 
-* Simple text extraction from PDF documents using https://github.com/jrmuizel/pdf-extract. No OCR or support for complex layout or formatting.
+* Simple text extraction from PDF documents using https://github.com/jrmuizel/pdf-extract. Currently no OCR, and no support for complex layout or formatting.
 
-* Simple text extraction from .docx documents using https://github.com/cstkingkey/docx-rs (docx-rust). No support for layout or formatting.
+* Simple text extraction from .docx documents using https://github.com/cstkingkey/docx-rs (docx-rust). Currently no support for complex layout or formatting.
 
 * HTML conversion to Markdown using https://github.com/letmutex/htmd.
 
@@ -17,12 +19,12 @@ Highly experimental extension to support RAG within Postgres by exposing some re
 
 * Text chunking by character count using https://github.com/benbrandt/text-splitter.
 
-* Text chunking by token count (tokenising for https://huggingface.co/Xenova/bge-small-en-v1.5), again using https://github.com/benbrandt/text-splitter.
+* Text chunking by token count (tokenising for https://huggingface.co/Xenova/bge-small-en-v1.5 -- see below), again using https://github.com/benbrandt/text-splitter.
 
 
 ### Local embedding and reranking models
 
-* Local embedding generation with 33M parameter model https://huggingface.co/Xenova/bge-small-en-v1.5 using https://github.com/Anush008/fastembed-rs.
+* Local embedding generation with a 33M parameter model https://huggingface.co/Xenova/bge-small-en-v1.5 using https://github.com/Anush008/fastembed-rs.
 
 * Reranking with 33M parameter model https://huggingface.co/jinaai/jina-reranker-v1-tiny-en using https://github.com/Anush008/fastembed-rs.
 
@@ -56,12 +58,14 @@ make
 make install
 ```
 
+Finally:
+
 * `cargo pgrx run`
 
 
 ## Installation notes
 
-* The `ort` package supplies precompiled binaries for the ONNX runtime. On some platforms, this may give rise to `undefined symbol` errors. In that case, you'll need to compile an ONNX runtime (at v18) yourself. On Debian, that looks something like this:
+* The `ort` package supplies precompiled binaries for the ONNX runtime. On some platforms, this may give rise to `undefined symbol` errors. In that case, you'll need to compile an ONNX runtime v18 yourself. On Debian, that looks something like this:
 
 ```bash
 apt-get update && apt-get install -y build-essential python3 python3-pip
