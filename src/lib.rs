@@ -13,7 +13,7 @@ mod pdf;
 pg_module_magic!();
 
 #[pg_schema]
-mod neon_ai {
+mod rag {
     use fastembed::{
         RerankResult, TextEmbedding, TextRerank, TokenizerFiles, UserDefinedEmbeddingModel, UserDefinedRerankingModel,
     };
@@ -23,8 +23,8 @@ mod neon_ai {
     use super::errors::*;
 
     extension_sql!(
-        "CREATE TABLE neon_ai.config(name text PRIMARY KEY, value text);
-        REVOKE ALL ON TABLE neon_ai.config FROM PUBLIC;",
+        "CREATE TABLE rag.config(name text PRIMARY KEY, value text);
+        REVOKE ALL ON TABLE rag.config FROM PUBLIC;",
         name = "config",
     );
 
@@ -85,13 +85,13 @@ mod neon_ai {
     }
 
     extension_sql!(
-        "CREATE FUNCTION neon_ai.embedding_for_passage_bge_small_en_v15(input text) RETURNS vector(384)
+        "CREATE FUNCTION rag.embedding_for_passage_bge_small_en_v15(input text) RETURNS vector(384)
         LANGUAGE SQL IMMUTABLE STRICT AS $$
-            SELECT neon_ai._embedding_bge_small_en_v15(input)::vector(384);
+            SELECT rag._embedding_bge_small_en_v15(input)::vector(384);
         $$;
-        CREATE FUNCTION neon_ai.embedding_for_query_bge_small_en_v15(input text) RETURNS vector(384)
+        CREATE FUNCTION rag.embedding_for_query_bge_small_en_v15(input text) RETURNS vector(384)
         LANGUAGE SQL IMMUTABLE STRICT AS $$
-            SELECT neon_ai._embedding_bge_small_en_v15('Represent this sentence for searching relevant passages: ' || input)::vector(384);
+            SELECT rag._embedding_bge_small_en_v15('Represent this sentence for searching relevant passages: ' || input)::vector(384);
         $$;",
         name = "embedding_bge_small_en_v15",
     );
@@ -141,7 +141,7 @@ mod neon_ai {
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
-    use super::neon_ai::*;
+    use super::rag::*;
     use pgrx::prelude::*;
 
     #[pg_test]

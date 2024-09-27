@@ -1,7 +1,7 @@
 use pgrx::prelude::*;
 
 #[pg_schema]
-mod neon_ai {
+mod rag {
     use super::super::errors::*;
     use pgrx::prelude::*;
 
@@ -14,7 +14,7 @@ mod neon_ai {
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
-    use super::neon_ai::*;
+    use super::rag::*;
     use pgrx::prelude::*;
 
     #[pg_test]
@@ -25,7 +25,7 @@ mod tests {
         )
     }
 
-    #[pg_test(error = "[neon_ai] Error extracting text from PDF: PDF error: Invalid file header")]
+    #[pg_test(error = "[rag] Error extracting text from PDF: PDF error: Invalid file header")]
     fn test_text_from_not_pdf() {
         text_from_pdf(include_bytes!("../test_res/test.pages"));
     }

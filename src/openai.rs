@@ -1,7 +1,7 @@
 use pgrx::prelude::*;
 
 #[pg_schema]
-mod neon_ai {
+mod rag {
     use super::super::errors::*;
     use super::super::json_api::*;
     use pgrx::prelude::*;
@@ -10,14 +10,14 @@ mod neon_ai {
     // API key
 
     extension_sql!(
-        "CREATE FUNCTION neon_ai.openai_set_api_key(api_key text) RETURNS void
+        "CREATE FUNCTION rag.openai_set_api_key(api_key text) RETURNS void
         LANGUAGE SQL VOLATILE STRICT AS $$
-            INSERT INTO neon_ai.config VALUES ('OPENAI_KEY', api_key)
+            INSERT INTO rag.config VALUES ('OPENAI_KEY', api_key)
             ON CONFLICT (name) DO UPDATE SET value = EXCLUDED.value;
         $$;
-        CREATE FUNCTION neon_ai.openai_get_api_key() RETURNS text
+        CREATE FUNCTION rag.openai_get_api_key() RETURNS text
         LANGUAGE SQL VOLATILE STRICT AS $$
-            SELECT value FROM neon_ai.config WHERE name = 'OPENAI_KEY';
+            SELECT value FROM rag.config WHERE name = 'OPENAI_KEY';
         $$;",
         name = "openai_api_key",
         requires = ["config"],
@@ -59,30 +59,30 @@ mod neon_ai {
     }
 
     extension_sql!(
-        "CREATE FUNCTION neon_ai.openai_text_embedding(model text, input text) RETURNS vector
+        "CREATE FUNCTION rag.openai_text_embedding(model text, input text) RETURNS vector
         LANGUAGE PLPGSQL IMMUTABLE STRICT AS $$
             DECLARE
-                api_key text := neon_ai.openai_get_api_key();
+                api_key text := rag.openai_get_api_key();
                 res vector;
             BEGIN
                 IF api_key IS NULL THEN
-                    RAISE EXCEPTION '[neon_ai] OpenAI API key is not set';
+                    RAISE EXCEPTION '[rag] OpenAI API key is not set';
                 END IF;
-                SELECT neon_ai._openai_text_embedding(model, input, api_key)::vector INTO res;
+                SELECT rag._openai_text_embedding(model, input, api_key)::vector INTO res;
                 RETURN res;
             END;
         $$;
-        CREATE FUNCTION neon_ai.openai_text_embedding_ada_002(input text) RETURNS vector(1536)
+        CREATE FUNCTION rag.openai_text_embedding_ada_002(input text) RETURNS vector(1536)
         LANGUAGE SQL IMMUTABLE STRICT AS $$
-          SELECT neon_ai.openai_text_embedding('text-embedding-ada-002', input)::vector(1536);
+          SELECT rag.openai_text_embedding('text-embedding-ada-002', input)::vector(1536);
         $$;
-        CREATE FUNCTION neon_ai.openai_text_embedding_3_small(input text) RETURNS vector(1536)
+        CREATE FUNCTION rag.openai_text_embedding_3_small(input text) RETURNS vector(1536)
         LANGUAGE SQL IMMUTABLE STRICT AS $$
-          SELECT neon_ai.openai_text_embedding('text-embedding-3-small', input)::vector(1536);
+          SELECT rag.openai_text_embedding('text-embedding-3-small', input)::vector(1536);
         $$;
-        CREATE FUNCTION neon_ai.openai_text_embedding_3_large(input text) RETURNS vector(3072)
+        CREATE FUNCTION rag.openai_text_embedding_3_large(input text) RETURNS vector(3072)
         LANGUAGE SQL IMMUTABLE STRICT AS $$
-          SELECT neon_ai.openai_text_embedding('text-embedding-3-large', input)::vector(3072);
+          SELECT rag.openai_text_embedding('text-embedding-3-large', input)::vector(3072);
         $$;",
         name = "openai_embeddings",
     );
@@ -96,16 +96,16 @@ mod neon_ai {
     }
 
     extension_sql!(
-        "CREATE FUNCTION neon_ai.openai_chat_completion(body json) RETURNS json
+        "CREATE FUNCTION rag.openai_chat_completion(body json) RETURNS json
         LANGUAGE PLPGSQL VOLATILE STRICT AS $$
             DECLARE
-                api_key text := neon_ai.openai_get_api_key();
+                api_key text := rag.openai_get_api_key();
                 res json;
             BEGIN
                 IF api_key IS NULL THEN
-                    RAISE EXCEPTION '[neon_ai] OpenAI API key is not set';
+                    RAISE EXCEPTION '[rag] OpenAI API key is not set';
                 END IF;
-                SELECT neon_ai._openai_chat_completion(body, api_key) INTO res;
+                SELECT rag._openai_chat_completion(body, api_key) INTO res;
                 RETURN res;
             END;
         $$;",
@@ -116,7 +116,7 @@ mod neon_ai {
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
-    use super::neon_ai::*;
+    use super::rag::*;
     use pgrx::prelude::*;
     use std::env;
 
@@ -127,12 +127,12 @@ mod tests {
         }
     }
 
-    #[pg_test(error = "[neon_ai] HTTP status code 401 trying to reach API")]
+    #[pg_test(error = "[rag] HTTP status code 401 trying to reach API")]
     fn test_embedding_openai_raw_bad_key() {
         _openai_text_embedding("text-embedding-3-small", "hello world!", "invalid-key");
     }
 
-    #[pg_test(error = "[neon_ai] HTTP status code 404 trying to reach API")]
+    #[pg_test(error = "[rag] HTTP status code 404 trying to reach API")]
     fn test_embedding_openai_raw_bad_model() {
         _openai_text_embedding("text-embedding-3-immense", "hello world!", &openai_api_key());
     }

@@ -1,6 +1,6 @@
 use pgrx::prelude::*;
 
-pub const ERR_PREFIX: &'static str = "[neon_ai]";
+pub const ERR_PREFIX: &'static str = "[rag]";
 
 pub trait UnwrapPgErrExt<T> {
     fn unwrap_or_pg_err(self, msg: &str) -> T;

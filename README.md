@@ -84,7 +84,7 @@ ORT_LIB_LOCATION=/home/user/onnxruntime-src/build/Linux cargo pgrx install --rel
 ## Usage
 
 ```sql
-create extension if not exists neon_ai cascade;  -- `cascade` installs pgvector dependency
+create extension if not exists rag cascade;  -- `cascade` installs pgvector dependency
 ```
 
 
@@ -93,7 +93,7 @@ create extension if not exists neon_ai cascade;  -- `cascade` installs pgvector 
 Locally convert HTML to Markdown:
 
 ```sql
-select neon_ai.markdown_from_html('<html><body><h1>Title</h1><p>A <i>very</i> short paragraph</p><p>Another paragraph</p></body></html>');
+select rag.markdown_from_html('<html><body><h1>Title</h1><p>A <i>very</i> short paragraph</p><p>Another paragraph</p></body></html>');
 --  '# Title\n\nA _very_ short paragraph\n\nAnother paragraph'
 ```
 
@@ -104,7 +104,7 @@ Locally extract text from a PDF:
 
 ```sql
 \set contents `base64 < /path/to/your.pdf`
-select neon_ai.text_from_pdf(decode(:'contents', 'base64'));
+select rag.text_from_pdf(decode(:'contents', 'base64'));
 -- 'Text content of PDF'
 ```
 
@@ -115,7 +115,7 @@ Locally extract text from a .docx file:
 
 ```sql
 \set contents `base64 < /path/to/your.docx`
-select neon_ai.text_from_docx(decode(:'contents', 'base64'));
+select rag.text_from_docx(decode(:'contents', 'base64'));
 -- 'Text content of .docx'
 ```
 
@@ -125,7 +125,7 @@ select neon_ai.text_from_docx(decode(:'contents', 'base64'));
 Locally chunk text using character count, with max and overlap:
 
 ```sql
-select neon_ai.chunks_by_character_count('The quick brown fox jumps over the lazy dog', 20, 4);
+select rag.chunks_by_character_count('The quick brown fox jumps over the lazy dog', 20, 4);
 -- {"The quick brown fox","fox jumps over the","the lazy dog"}
 ```
 
@@ -135,7 +135,7 @@ select neon_ai.chunks_by_character_count('The quick brown fox jumps over the laz
 Locally chunk text using token count for `bge_small_en_v15` embeddings, with max and overlap:
 
 ```sql
-select neon_ai.chunks_by_token_count_bge_small_en_v15('The quick brown fox jumps over the lazy dog', 4, 1);
+select rag.chunks_by_token_count_bge_small_en_v15('The quick brown fox jumps over the lazy dog', 4, 1);
 -- {"The quick brown fox","fox jumps over the","the lazy dog"}
 ```
 
@@ -145,9 +145,9 @@ select neon_ai.chunks_by_token_count_bge_small_en_v15('The quick brown fox jumps
 Locally tokenize + generate embeddings using a small (33M param) model:
 
 ```sql
-select neon_ai.embedding_for_passage_bge_small_en_v15('The quick brown fox jumps over the lazy dog');
+select rag.embedding_for_passage_bge_small_en_v15('The quick brown fox jumps over the lazy dog');
 -- [-0.1047543,-0.02242211,-0.0126493685, ...]
-select neon_ai.embedding_for_query_bge_small_en_v15('What did the quick brown fox jump over?');
+select rag.embedding_for_query_bge_small_en_v15('What did the quick brown fox jump over?');
 -- [-0.09328926,-0.030567117,-0.027558783, ...]
 ```
 
@@ -157,10 +157,10 @@ select neon_ai.embedding_for_query_bge_small_en_v15('What did the quick brown fo
 Locally tokenize + rerank original texts using a small (33M param) model:
 
 ```sql
-select neon_ai.rerank_score_jina_v1_tiny_en('The quick brown fox jumps over the lazy dog', 'What did the quick brown fox jump over?');
+select rag.rerank_score_jina_v1_tiny_en('The quick brown fox jumps over the lazy dog', 'What did the quick brown fox jump over?');
 -- -1.1093962
 
-select neon_ai.rerank_score_jina_v1_tiny_en('The quick brown fox jumps over the lazy dog', 'Never Eat Shredded Wheat');
+select rag.rerank_score_jina_v1_tiny_en('The quick brown fox jumps over the lazy dog', 'Never Eat Shredded Wheat');
 -- 1.4725753
 ```
 
@@ -170,8 +170,8 @@ select neon_ai.rerank_score_jina_v1_tiny_en('The quick brown fox jumps over the 
 Store and retrieve your OpenAI API key:
 
 ```sql
-select neon_ai.openai_set_api_key('sk-proj-...');
-select neon_ai.openai_get_api_key();
+select rag.openai_set_api_key('sk-proj-...');
+select rag.openai_get_api_key();
 -- 'sk-proj-...'
 ```
 
@@ -181,7 +181,7 @@ select neon_ai.openai_get_api_key();
 Call out to OpenAI embeddings API (makes network request):
 
 ```sql
-select neon_ai.openai_text_embedding_3_small('The quick brown fox jumps over the lazy dog');
+select rag.openai_text_embedding_3_small('The quick brown fox jumps over the lazy dog');
 -- {-0.020836005,-0.016921125,-0.00450666, ...}
 ```
 
@@ -191,7 +191,7 @@ select neon_ai.openai_text_embedding_3_small('The quick brown fox jumps over the
 Call out to OpenAI chat/completions API (makes network request):
 
 ```sql
-select neon_ai.openai_chat_completion('{"model":"gpt-4o-mini","messages":[{"role":"system","content":"you are a helpful assistant"},{"role":"user","content":"hi!"}]}');
+select rag.openai_chat_completion('{"model":"gpt-4o-mini","messages":[{"role":"system","content":"you are a helpful assistant"},{"role":"user","content":"hi!"}]}');
 -- {"id": "chatcmpl-...", "model": "gpt-4o-mini-2024-07-18", "usage": {"total_tokens": 27, "prompt_tokens": 18, "completion_tokens": 9}, "object": "chat.completion", "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hello! How can I assist you today?", "refusal": null}, "logprobs": null, "finish_reason": "stop"}], "created": 1724765541, "system_fingerprint": "fp_..."}
 ```
 
@@ -201,8 +201,8 @@ select neon_ai.openai_chat_completion('{"model":"gpt-4o-mini","messages":[{"role
 Store and retrieve your Fireworks.ai API key:
 
 ```sql
-select neon_ai.fireworks_set_api_key('fw_...');
-select neon_ai.fireworks_get_api_key();
+select rag.fireworks_set_api_key('fw_...');
+select rag.fireworks_get_api_key();
 -- 'fw_...'
 ```
 
@@ -212,7 +212,7 @@ select neon_ai.fireworks_get_api_key();
 Call out to Fireworks.ai chat/completions API (makes network request):
 
 ```sql
-select neon_ai.fireworks_chat_completion('{"model":"accounts/fireworks/models/llama-v3p1-8b-instruct","messages":[{"role":"system","content":"you are a helpful assistant"},{"role":"user","content":"hi!"}]}');
+select rag.fireworks_chat_completion('{"model":"accounts/fireworks/models/llama-v3p1-8b-instruct","messages":[{"role":"system","content":"you are a helpful assistant"},{"role":"user","content":"hi!"}]}');
 --  {"choices":[{"finish_reason":"stop","index":0,"message":{"content":"Hi! How can I assist you today?","role":"assistant"}}],"created":1725362940,"id":"...","model":"accounts/fireworks/models/llama-v3p1-8b-instruct","object":"chat.completion","usage":{"completion_tokens":10,"prompt_tokens":23,"total_tokens":33}}
 ```
 
@@ -252,11 +252,11 @@ Now we extract text from some PDFs, chunk that text, and generate embeddings for
 
 ```sql
 with chunks as (
-  select id, unnest(neon_ai.chunks_by_token_count_bge_small_en_v15(neon_ai.text_from_pdf(blob), 192, 8)) as chunk
+  select id, unnest(rag.chunks_by_token_count_bge_small_en_v15(rag.text_from_pdf(blob), 192, 8)) as chunk
   from docs
 )
 insert into embeddings (doc_id, chunk, embedding) (
-  select id, chunk, neon_ai.embedding_for_passage_bge_small_en_v15(chunk) from chunks
+  select id, chunk, rag.embedding_for_passage_bge_small_en_v15(chunk) from chunks
 );
 ```
 
@@ -267,12 +267,12 @@ Let's query the embeddings and rerank the results (still all done locally).
 
 with naive_ordered as (
   select
-    id, doc_id, chunk, embedding <=> neon_ai.embedding_for_query_bge_small_en_v15(:'query') as cosine_distance
+    id, doc_id, chunk, embedding <=> rag.embedding_for_query_bge_small_en_v15(:'query') as cosine_distance
   from embeddings
   order by cosine_distance
   limit 10
 )
-select *, neon_ai.rerank_score_jina_v1_tiny_en(:'query', chunk) as rerank_distance
+select *, rag.rerank_score_jina_v1_tiny_en(:'query', chunk) as rerank_distance
 from naive_ordered
 order by rerank_distance;
 ```
@@ -284,17 +284,17 @@ Building on that, now we can also feed the query and top chunks to remote ChatGP
 
 with naive_ordered as (
   select
-    id, doc_id, chunk, embedding <=> neon_ai.embedding_for_query_bge_small_en_v15(:'query') as cosine_distance
+    id, doc_id, chunk, embedding <=> rag.embedding_for_query_bge_small_en_v15(:'query') as cosine_distance
   from embeddings
   order by cosine_distance
   limit 10
 ),
 reranked as (
-  select *, neon_ai.rerank_score_jina_v1_tiny_en(:'query', chunk) as rerank_distance
+  select *, rag.rerank_score_jina_v1_tiny_en(:'query', chunk) as rerank_distance
   from naive_ordered
   order by rerank_distance limit 5
 )
-select neon_ai.openai_chat_completion(json_object(
+select rag.openai_chat_completion(json_object(
   'model': 'gpt-4o-mini',
   'messages': json_array(
     json_object(

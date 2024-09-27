@@ -1,5 +1,5 @@
 [package]
-name = "neon_ai"
+name = "rag"
 version = "0.0.0"
 edition = "2021"
 
@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib", "lib"]
 
 [[bin]]
-name = "pgrx_embed_neon_ai"
+name = "pgrx_embed_rag"
 path = "./src/bin/pgrx_embed.rs"
 
 [features]

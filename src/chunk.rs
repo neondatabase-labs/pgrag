@@ -1,7 +1,7 @@
 use pgrx::prelude::*;
 
 #[pg_schema]
-mod neon_ai {
+mod rag {
     use super::super::errors::*;
     use pgrx::prelude::*;
 
@@ -95,7 +95,7 @@ mod neon_ai {
 #[pg_schema]
 mod tests {
     use pgrx::prelude::*;
-    use super::neon_ai::*;
+    use super::rag::*;
 
     #[pg_test]
     fn test_chunk_by_characters() {

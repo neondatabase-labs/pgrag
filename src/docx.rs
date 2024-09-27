@@ -1,7 +1,7 @@
 use pgrx::prelude::*;
 
 #[pg_schema]
-mod neon_ai {
+mod rag {
     use super::super::errors::*;
     use pgrx::prelude::*;
     use std::io::Cursor;
@@ -24,7 +24,7 @@ mod neon_ai {
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
-    use super::neon_ai::*;
+    use super::rag::*;
     use pgrx::prelude::*;
 
     #[pg_test]
@@ -35,7 +35,7 @@ mod tests {
         )
     }
 
-    #[pg_test(error = "[neon_ai] Couldn't read .docx file: Zip(FileNotFound)")]
+    #[pg_test(error = "[rag] Couldn't read .docx file: Zip(FileNotFound)")]
     fn test_text_from_not_docx() {
         text_from_docx(include_bytes!("../test_res/test.pages").to_vec());
     }
