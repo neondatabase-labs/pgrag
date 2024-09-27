@@ -98,7 +98,7 @@ mod neon_ai {
 
     // === local reranking ===
 
-    pub fn reranks_jina_v1_tiny_en_base(query: &str, documents: Vec<&str>) -> Vec<RerankResult> {
+    pub fn reranks_jina_v1_tiny_en_base(query: &str, documents: Vec<String>) -> Vec<RerankResult> {
         thread_local! {
             static CELL: OnceCell<TextRerank> = const { OnceCell::new() };
         }
@@ -108,6 +108,7 @@ mod neon_ai {
                 TextRerank::try_new_from_user_defined(user_def_model, Default::default())
                     .expect_or_pg_err("Couldn't load model jina_reranker_v1_tiny_en")
             });
+            let documents = documents.iter().map(String::as_str).collect();
             model
                 .rerank(query, documents, false, None)
                 .expect_or_pg_err("Unable to rerank with jina_reranker_v1_tiny_en")
@@ -115,20 +116,20 @@ mod neon_ai {
     }
 
     #[pg_extern(immutable, strict)]
-    pub fn rerank_indices_jina_v1_tiny_en(query: &str, documents: Vec<&str>) -> Vec<i32> {
+    pub fn rerank_indices_jina_v1_tiny_en(query: &str, documents: Vec<String>) -> Vec<i32> {
         let reranking = reranks_jina_v1_tiny_en_base(query, documents);
         reranking.iter().map(|rr| rr.index as i32).collect()
     }
 
     #[pg_extern(immutable, strict)]
-    pub fn rerank_scores_jina_v1_tiny_en(query: &str, documents: Vec<&str>) -> Vec<f32> {
+    pub fn rerank_scores_jina_v1_tiny_en(query: &str, documents: Vec<String>) -> Vec<f32> {
         let mut reranking = reranks_jina_v1_tiny_en_base(query, documents);
         reranking.sort_by(|rr1, rr2| rr1.index.cmp(&rr2.index)); // return to input order
         reranking.iter().map(|rr| rr.score as f32).collect()
     }
 
     #[pg_extern(immutable, strict)]
-    pub fn rerank_score_jina_v1_tiny_en(query: &str, document: &str) -> f32 {
+    pub fn rerank_score_jina_v1_tiny_en(query: &str, document: String) -> f32 {
         let scores = rerank_scores_jina_v1_tiny_en(query, vec![document]);
         let score = scores.first().unwrap_or_pg_err("Unexpectedly empty reranking vector");
         -*score
@@ -166,7 +167,13 @@ mod tests {
 
     #[pg_test]
     fn test_rerank_jina_v1_tiny_en() {
-        let candidate_pets = vec!["crocodile", "hamster", "indeterminate", "floorboard", "cat"];
+        let candidate_pets = vec![
+            "crocodile".to_owned(),
+            "hamster".to_owned(),
+            "indeterminate".to_owned(),
+            "floorboard".to_owned(),
+            "cat".to_owned(),
+        ];
         let scores = rerank_scores_jina_v1_tiny_en("pet", candidate_pets.clone());
         let mut sorted_pets = candidate_pets.clone();
         sorted_pets.sort_by(|pet1, pet2| {
