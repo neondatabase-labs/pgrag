@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // based on https://github.com/dirs-dev/dirs-sys-rs/blob/main/src/lib.rs
 
 pub const PYKE_ROOT: &str = "ort.pyke.io";

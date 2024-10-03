@@ -1,5 +1,5 @@
 [package]
-name = "rag"
+name = "rag_embed_bge_small_en_v15"
 version = "0.0.0"
 edition = "2021"
 
@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib", "lib"]
 
 [[bin]]
-name = "pgrx_embed_rag"
+name = "pgrx_embed_rag_embed_bge_small_en_v15"
 path = "./src/bin/pgrx_embed.rs"
 
 [features]
@@ -21,20 +21,12 @@ pg17 = ["pgrx/pg17", "pgrx-tests/pg17" ]
 pg_test = []
 
 [dependencies]
-docx-rust = "0.1.8"
 fastembed = "3.10.0"
-htmd = "0.1.6"
-pdf-extract = "0.7.7"
 pgrx = "0.12.5"
-serde = "1.0.209"
-serde_json = "1.0.120"
-text-splitter = { version = "0.14.1", features = ["tokenizers"] }
-tokenizers = "0.19.1"
-ureq = { version = "2.9.7", features = ["json"] }
 
 [patch.crates-io]
-ort = { path = "ort-2.0.0-rc.4" }
-ort-sys = { path = "ort-2.0.0-rc.4/ort-sys" }
+ort = { path = "../../lib/ort-2.0.0-rc.4" }
+ort-sys = { path = "../../lib/ort-2.0.0-rc.4/ort-sys" }
 
 [dev-dependencies]
 pgrx-tests = "0.12.5"
