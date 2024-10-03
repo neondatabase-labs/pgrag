@@ -1,6 +1,6 @@
 # Experimental Postgres extensions for end-to-end Retrieval-Augmented Generation (RAG)
 
-Experimental extensions to support RAG within Postgres. Currently offers:
+Experimental extensions to support RAG within Postgres. Currently provide:
 
 
 ### Text extraction and conversion
@@ -20,6 +20,8 @@ Experimental extensions to support RAG within Postgres. Currently offers:
 
 
 ### Local embedding and reranking models
+
+These are packaged as separate extensions, because they are large and because we may want to add others in future.
 
 * Local tokenising + embedding generation with 33M parameter model [bge-small-en-v1.5](https://huggingface.co/Xenova/bge-small-en-v1.5) using [fastembed](https://github.com/Anush008/fastembed-rs).
 
@@ -46,7 +48,7 @@ make
 make install
 ```
 
-Next, download the extension source, and uncompress the model files:
+Next, download the extensions source, and (if you are building the embedding or reranking extensions) uncompress the model files:
 
 * `cd lib/bge_small_en_v15 && tar xzf model.onnx.tar.gz && cd ../..`
 * `cd lib/jina_reranker_v1_tiny_en && tar xzf model.onnx.tar.gz && cd ../..`
@@ -55,7 +57,7 @@ Then (with Rust installed):
 
 * `cargo install --locked cargo-pgrx@0.12.5`
 
-Finally, inside one of the three folders inside `extensions`:
+Finally, inside any and all of the three folders inside `extensions`:
 
 * `PG_CONFIG=/path/to/pg_config cargo pgrx install --release`
 
