@@ -9,7 +9,6 @@ mod rag_embed_bge_small_en_v15 {
     use fastembed::{TextEmbedding, TokenizerFiles, UserDefinedEmbeddingModel};
     use pgrx::prelude::*;
     use std::cell::OnceCell;
-
     use super::errors::*;
 
     macro_rules! local_tokenizer_files {
