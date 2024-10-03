@@ -36,7 +36,7 @@ mod rag_embed_bge_small_en_v15 {
     // NOTE. It might be nice to expose this function directly, but as at 2024-07-08 pgrx
     // doesn't support Vec<Vec<_>>: https://github.com/pgcentralfoundation/pgrx/issues/1762.
 
-    // #[pg_extern(immutable, strict, name = "embedding")]
+    // #[pg_extern(immutable, strict, name = "_embedding")]
     pub fn embeddings(input: Vec<&str>) -> Vec<Vec<f32>> {
         thread_local! {
             static CELL: OnceCell<TextEmbedding> = const { OnceCell::new() };
