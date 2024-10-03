@@ -1,6 +1,6 @@
-# Experimental Postgres extension for end-to-end Retrieval-Augmented Generation (RAG)
+# Experimental Postgres extensions for end-to-end Retrieval-Augmented Generation (RAG)
 
-Experimental extension to support RAG within Postgres. Currently offers:
+Experimental extensions to support RAG within Postgres. Currently offers:
 
 
 ### Text extraction and conversion
@@ -48,14 +48,14 @@ make install
 
 Next, download the extension source, and uncompress the model files:
 
-* `cd bge_small_en_v15 && tar xzf model.onnx.tar.gz && cd ..`
-* `cd jina_reranker_v1_tiny_en && tar xzf model.onnx.tar.gz && cd ..`
+* `cd lib/bge_small_en_v15 && tar xzf model.onnx.tar.gz && cd ../..`
+* `cd lib/jina_reranker_v1_tiny_en && tar xzf model.onnx.tar.gz && cd ../..`
 
 Then (with Rust installed):
 
-* `cargo install --locked cargo-pgrx@0.11.3`
+* `cargo install --locked cargo-pgrx@0.12.5`
 
-Finally:
+Finally, inside one of the three folders inside `extensions`:
 
 * `PG_CONFIG=/path/to/pg_config cargo pgrx install --release`
 
@@ -78,13 +78,15 @@ And then when it comes to install the extension:
 ORT_LIB_LOCATION=/home/user/onnxruntime-src/build/Linux cargo pgrx install --release
 ```
 
-* The `ort` and `ort-sys` packages are drawn from a local folder using `[patch.crates-io]` in `Cargo.toml` because (as at 2024-09-06) otherwise we can end up with `ort` 2.0.0-rc.4 and `ort-sys` 2.0.0-rc.5, and this mismatch ends badly.
+* The `ort` and `ort-sys` packages are drawn from a local folder using `[patch.crates-io]` in `Cargo.toml` because (as at 2024-09-06) otherwise we can end up with `ort@2.0.0-rc.4` and `ort-sys@2.0.0-rc.5`, and this mismatch ends badly.
 
 
 ## Usage
 
 ```sql
 create extension if not exists rag cascade;  -- `cascade` installs pgvector dependency
+create extension if not exists rag_embed_bge_small_en_v15 cascade; 
+create extension if not exists rag_rerank_jina_v1_tiny_en cascade; 
 ```
 
 
@@ -145,9 +147,9 @@ select rag.chunks_by_token_count_bge_small_en_v15('The quick brown fox jumps ove
 Locally tokenize + generate embeddings using a small (33M param) model:
 
 ```sql
-select rag.embedding_for_passage_bge_small_en_v15('The quick brown fox jumps over the lazy dog');
+select rag_embed_bge_small_en_v15.embedding_for_passage('The quick brown fox jumps over the lazy dog');
 -- [-0.1047543,-0.02242211,-0.0126493685, ...]
-select rag.embedding_for_query_bge_small_en_v15('What did the quick brown fox jump over?');
+select rag_embed_bge_small_en_v15.embedding_for_query('What did the quick brown fox jump over?');
 -- [-0.09328926,-0.030567117,-0.027558783, ...]
 ```
 
@@ -157,10 +159,10 @@ select rag.embedding_for_query_bge_small_en_v15('What did the quick brown fox ju
 Locally tokenize + rerank original texts using a small (33M param) model:
 
 ```sql
-select rag.rerank_score_jina_v1_tiny_en('The quick brown fox jumps over the lazy dog', 'What did the quick brown fox jump over?');
+select rag_rerank_jina_v1_tiny_en.rerank_score('The quick brown fox jumps over the lazy dog', 'What did the quick brown fox jump over?');
 -- -1.1093962
 
-select rag.rerank_score_jina_v1_tiny_en('The quick brown fox jumps over the lazy dog', 'Never Eat Shredded Wheat');
+select rag_rerank_jina_v1_tiny_en.rerank_score('The quick brown fox jumps over the lazy dog', 'Never Eat Shredded Wheat');
 -- 1.4725753
 ```
 
@@ -256,7 +258,7 @@ with chunks as (
   from docs
 )
 insert into embeddings (doc_id, chunk, embedding) (
-  select id, chunk, rag.embedding_for_passage_bge_small_en_v15(chunk) from chunks
+  select id, chunk, rag_embed_bge_small_en_v15.embedding_for_passage(chunk) from chunks
 );
 ```
 
@@ -267,12 +269,12 @@ Let's query the embeddings and rerank the results (still all done locally).
 
 with naive_ordered as (
   select
-    id, doc_id, chunk, embedding <=> rag.embedding_for_query_bge_small_en_v15(:'query') as cosine_distance
+    id, doc_id, chunk, embedding <=> rag_embed_bge_small_en_v15.embedding_for_query(:'query') as cosine_distance
   from embeddings
   order by cosine_distance
   limit 10
 )
-select *, rag.rerank_score_jina_v1_tiny_en(:'query', chunk) as rerank_distance
+select *, rag_rerank_jina_v1_tiny_en.rerank_score(:'query', chunk) as rerank_distance
 from naive_ordered
 order by rerank_distance;
 ```
@@ -284,13 +286,13 @@ Building on that, now we can also feed the query and top chunks to remote ChatGP
 
 with naive_ordered as (
   select
-    id, doc_id, chunk, embedding <=> rag.embedding_for_query_bge_small_en_v15(:'query') as cosine_distance
+    id, doc_id, chunk, embedding <=> rag_embed_bge_small_en_v15.embedding_for_query(:'query') as cosine_distance
   from embeddings
   order by cosine_distance
   limit 10
 ),
 reranked as (
-  select *, rag.rerank_score_jina_v1_tiny_en(:'query', chunk) as rerank_distance
+  select *, rag_rerank_jina_v1_tiny_en.rerank_score(:'query', chunk) as rerank_distance
   from naive_ordered
   order by rerank_distance limit 5
 )
