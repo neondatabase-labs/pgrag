@@ -1,6 +1,8 @@
-# Experimental Postgres extensions for end-to-end Retrieval-Augmented Generation (RAG)
+# pgrag
 
-Experimental extensions to support RAG within Postgres. Currently provide:
+Postgres extensions to support end-to-end Retrieval-Augmented Generation (RAG) pipelines.
+
+Currently provide:
 
 
 ### Text extraction and conversion
