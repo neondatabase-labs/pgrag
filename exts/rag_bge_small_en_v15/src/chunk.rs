@@ -83,7 +83,7 @@ mod tests {
     use super::rag_bge_small_en_v15::*;
 
     #[pg_test]
-    fn test_chunk_by_tokens() {
+    fn test_chunk_by_tokens_1() {
         assert_eq!(
             chunks_by_token_count(
                 "The quick brown fox jumps over the lazy dog. In other news, the dish ran away with the spoon.",
@@ -96,6 +96,47 @@ mod tests {
                 "In other news, the dish ran away",
                 "ran away with the spoon."
             ]
+        );
+    }
+
+    #[pg_test]
+    fn test_chunk_by_tokens_2() {
+        assert_eq!(
+            chunks_by_token_count(
+                "The quick brown fox jumps over the lazy dog. In other news, the dish ran away with the spoon.",
+                12,
+                4
+            ),
+            vec![
+                "The quick brown fox jumps over the lazy dog.", 
+                "In other news, the dish ran away with the spoon."
+            ]
+        );
+    }
+
+    #[pg_test]
+    fn test_chunk_by_tokens_3() {
+        assert_eq!(
+            chunks_by_token_count(
+                "The quick brown fox jumps over the lazy dog. In other news, the dish ran away with the spoon.",
+                64,
+                12
+            ),
+            vec![
+                "The quick brown fox jumps over the lazy dog. In other news, the dish ran away with the spoon."
+            ]
+        );
+    }
+
+    #[pg_test]
+    fn test_chunk_by_tokens_empty() {
+        assert_eq!(
+            chunks_by_token_count(
+                "",
+                64,
+                12
+            ),
+            vec![] as Vec<&str>
         );
     }
 }

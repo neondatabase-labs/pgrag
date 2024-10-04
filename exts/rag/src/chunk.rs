@@ -43,4 +43,31 @@ mod tests {
             ]
         );
     }
+
+    #[pg_test]
+    fn test_chunk_by_characters_2() {
+        assert_eq!(
+            chunks_by_character_count(
+                "The quick brown fox jumps over the lazy dog. In other news, the dish ran away with the spoon.",
+                50,
+                20
+            ),
+            vec![
+                "The quick brown fox jumps over the lazy dog.",
+                "In other news, the dish ran away with the spoon."
+            ]
+        );
+    }
+
+    #[pg_test]
+    fn test_chunk_by_characters_empty() {
+        assert_eq!(
+            chunks_by_character_count(
+                "",
+                50,
+                20
+            ),
+            vec![] as Vec<&str>
+        );
+    }
 }
