@@ -2,7 +2,6 @@ use pgrx::prelude::*;
 
 mod errors;
 mod json_api;
-
 mod chunk;
 mod docx;
 mod fireworks;

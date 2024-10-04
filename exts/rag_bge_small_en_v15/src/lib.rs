@@ -1,6 +1,7 @@
 use pgrx::prelude::*;
 
 mod errors;
+mod chunk;
 
 pg_module_magic!();
 
