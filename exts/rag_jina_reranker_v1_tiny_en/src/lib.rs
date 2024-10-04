@@ -64,7 +64,7 @@ mod rag_jina_reranker_v1_tiny_en {
     }
 
     #[pg_extern(immutable, strict)]
-    pub fn rerank_score(query: &str, document: String) -> f32 {
+    pub fn rerank_distance(query: &str, document: String) -> f32 {
         let scores = rerank_scores(query, vec![document]);
         let score = scores.first().unwrap_or_pg_err("Unexpectedly empty reranking vector");
         -*score
@@ -80,7 +80,7 @@ mod tests {
     use pgrx::prelude::*;
 
     #[pg_test]
-    fn test_rerank() {
+    fn test_rerank_scores() {
         let candidate_pets = vec![
             "crocodile".to_owned(),
             "hamster".to_owned(),
@@ -97,6 +97,13 @@ mod tests {
         });
         log!("{:?}", sorted_pets);
         assert!(sorted_pets == vec!["cat", "hamster", "crocodile", "floorboard", "indeterminate"]);
+    }
+
+    #[pg_test]
+    fn test_rerank_distance() {
+        let similar_distance = rerank_distance("cat", "dog".to_owned());
+        let dissimilar_distance = rerank_distance("cat", "pirate".to_owned());
+        assert!(similar_distance < dissimilar_distance);
     }
 }
 

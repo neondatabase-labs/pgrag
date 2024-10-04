@@ -21,7 +21,7 @@ Experimental extensions to support RAG within Postgres. Currently provide:
 
 ### Local embedding and reranking models
 
-These are packaged as separate extensions, because they are large and because we may want to add others in future.
+These are packaged as separate extensions, because they are large (>100MB) and because we may want to add others in future.
 
 * Local tokenising + embedding generation with 33M parameter model [bge-small-en-v1.5](https://huggingface.co/Xenova/bge-small-en-v1.5) using [fastembed](https://github.com/Anush008/fastembed-rs).
 
@@ -57,7 +57,7 @@ Then (with Rust installed):
 
 * `cargo install --locked cargo-pgrx@0.12.5`
 
-Finally, inside any and all of the three folders inside `extensions`:
+Finally, inside each of the three folders inside `extensions`:
 
 * `PG_CONFIG=/path/to/pg_config cargo pgrx install --release`
 
@@ -74,7 +74,7 @@ mkdir onnxruntime-src && cd onnxruntime-src && tar xzf ../onnxruntime.tar.gz --s
 ./build.sh --config Release --parallel --skip_submodule_sync --skip_tests --allow_running_as_root
 ```
 
-And then when it comes to install the extension:
+And then when it comes to install the embedding/reranking extensions:
 
 ```bash
 ORT_LIB_LOCATION=/home/user/onnxruntime-src/build/Linux cargo pgrx install --release
@@ -87,8 +87,8 @@ ORT_LIB_LOCATION=/home/user/onnxruntime-src/build/Linux cargo pgrx install --rel
 
 ```sql
 create extension if not exists rag cascade;  -- `cascade` installs pgvector dependency
-create extension if not exists rag_embed_bge_small_en_v15 cascade; 
-create extension if not exists rag_rerank_jina_v1_tiny_en cascade; 
+create extension if not exists rag_bge_small_en_v15 cascade; 
+create extension if not exists rag_jina_reranker_v1_tiny_en cascade; 
 ```
 
 
@@ -134,37 +134,37 @@ select rag.chunks_by_character_count('The quick brown fox jumps over the lazy do
 ```
 
 
-#### `chunks_by_token_count_bge_small_en_v15(text, max_tokens integer, max_overlap_tokens integer) -> text[]`
+#### `chunks_by_token_count(text, max_tokens integer, max_overlap_tokens integer) -> text[]`
 
-Locally chunk text using token count for `bge_small_en_v15` embeddings, with max and overlap:
+Locally chunk text using token count for specific embedding model, with max and overlap:
 
 ```sql
-select rag.chunks_by_token_count_bge_small_en_v15('The quick brown fox jumps over the lazy dog', 4, 1);
+select rag_bge_small_en_v15.chunks_by_token_count('The quick brown fox jumps over the lazy dog', 4, 1);
 -- {"The quick brown fox","fox jumps over the","the lazy dog"}
 ```
 
 
-#### `embedding_for_passage_bge_small_en_v15(text) -> vector(384)` and `embedding_for_query_bge_small_en_v15(text) -> vector(384)`
+#### `embedding_for_passage(text) -> vector(384)` and `embedding_for_query(text) -> vector(384)`
 
 Locally tokenize + generate embeddings using a small (33M param) model:
 
 ```sql
-select rag_embed_bge_small_en_v15.embedding_for_passage('The quick brown fox jumps over the lazy dog');
+select rag_bge_small_en_v15.embedding_for_passage('The quick brown fox jumps over the lazy dog');
 -- [-0.1047543,-0.02242211,-0.0126493685, ...]
-select rag_embed_bge_small_en_v15.embedding_for_query('What did the quick brown fox jump over?');
+select rag_bge_small_en_v15.embedding_for_query('What did the quick brown fox jump over?');
 -- [-0.09328926,-0.030567117,-0.027558783, ...]
 ```
 
 
-#### `rerank_score_jina_v1_tiny_en(text, text) -> real`
+#### `rerank_distance(text, text) -> real`
 
 Locally tokenize + rerank original texts using a small (33M param) model:
 
 ```sql
-select rag_rerank_jina_v1_tiny_en.rerank_score('The quick brown fox jumps over the lazy dog', 'What did the quick brown fox jump over?');
+select rag_jina_reranker_v1_tiny_en.rerank_distance('The quick brown fox jumps over the lazy dog', 'What did the quick brown fox jump over?');
 -- -1.1093962
 
-select rag_rerank_jina_v1_tiny_en.rerank_score('The quick brown fox jumps over the lazy dog', 'Never Eat Shredded Wheat');
+select rag_jina_reranker_v1_tiny_en.rerank_distance('The quick brown fox jumps over the lazy dog', 'Never Eat Shredded Wheat');
 -- 1.4725753
 ```
 
@@ -223,24 +223,32 @@ select rag.fireworks_chat_completion('{"model":"accounts/fireworks/models/llama-
 
 ## End-to-end RAG example
 
-Setup: create a `docs` table and ingest some PDF documents, then create and index an `embeddings` table. None of this setup uses the extension, only its `pgvector` dependency.
+Setup: create a `docs` table and ingest some PDF documents as text.
 
 ```sql
 drop table docs cascade;
 create table docs
 ( id int primary key generated always as identity
-, blob bytea not null
+, name text not null
+, fulltext text not null
 );
 
 \set contents `base64 < /path/to/first.pdf`
-insert into docs (blob) values (decode(:'contents','base64'));
+insert into docs (name, fulltext)
+values ('first.pdf', rag.text_from_pdf(decode(:'contents','base64')));
 
 \set contents `base64 < /path/to/second.pdf`
-insert into docs (blob) values (decode(:'contents','base64'));
+insert into docs (name, fulltext)
+values ('second.pdf', rag.text_from_pdf(decode(:'contents','base64')));
 
 \set contents `base64 < /path/to/third.pdf`
-insert into docs (blob) values (decode(:'contents','base64'));
+insert into docs (name, fulltext)
+values ('third.pdf', rag.text_from_pdf(decode(:'contents','base64'))));
+```
 
+Now we create an `embeddings` table, chunk the text, and generate embeddings for the chunks (this is all done locally).
+
+```sql
 drop table embeddings;
 create table embeddings
 ( id int primary key generated always as identity
@@ -250,17 +258,13 @@ create table embeddings
 );
 
 create index on embeddings using hnsw (embedding vector_cosine_ops);
-```
 
-Now we extract text from some PDFs, chunk that text, and generate embeddings for the chunks (this is all done locally).
-
-```sql
 with chunks as (
-  select id, unnest(rag.chunks_by_token_count_bge_small_en_v15(rag.text_from_pdf(blob), 192, 8)) as chunk
+  select id, unnest(rag_bge_small_en_v15.chunks_by_token_count(fulltext, 192, 8)) as chunk
   from docs
 )
 insert into embeddings (doc_id, chunk, embedding) (
-  select id, chunk, rag_embed_bge_small_en_v15.embedding_for_passage(chunk) from chunks
+  select id, chunk, rag_bge_small_en_v15.embedding_for_passage(chunk) from chunks
 );
 ```
 
@@ -271,12 +275,12 @@ Let's query the embeddings and rerank the results (still all done locally).
 
 with naive_ordered as (
   select
-    id, doc_id, chunk, embedding <=> rag_embed_bge_small_en_v15.embedding_for_query(:'query') as cosine_distance
+    id, doc_id, chunk, embedding <=> rag_bge_small_en_v15.embedding_for_query(:'query') as cosine_distance
   from embeddings
   order by cosine_distance
   limit 10
 )
-select *, rag_rerank_jina_v1_tiny_en.rerank_score(:'query', chunk) as rerank_distance
+select *, rag_jina_reranker_v1_tiny_en.rerank_distance(:'query', chunk)
 from naive_ordered
 order by rerank_distance;
 ```
@@ -288,13 +292,13 @@ Building on that, now we can also feed the query and top chunks to remote ChatGP
 
 with naive_ordered as (
   select
-    id, doc_id, chunk, embedding <=> rag_embed_bge_small_en_v15.embedding_for_query(:'query') as cosine_distance
+    id, doc_id, chunk, embedding <=> rag_bge_small_en_v15.embedding_for_query(:'query') as cosine_distance
   from embeddings
   order by cosine_distance
   limit 10
 ),
 reranked as (
-  select *, rag_rerank_jina_v1_tiny_en.rerank_score(:'query', chunk) as rerank_distance
+  select *, rag_jina_reranker_v1_tiny_en.rerank_distance(:'query', chunk)
   from naive_ordered
   order by rerank_distance limit 5
 )
