@@ -5,7 +5,7 @@ mod errors;
 pg_module_magic!();
 
 #[pg_schema]
-mod rag_rerank_jina_v1_tiny_en {
+mod rag_jina_reranker_v1_tiny_en {
     use super::errors::*;
     use fastembed::{RerankResult, TextRerank, TokenizerFiles, UserDefinedRerankingModel};
     use pgrx::prelude::*;
@@ -76,7 +76,7 @@ mod rag_rerank_jina_v1_tiny_en {
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
-    use super::rag_rerank_jina_v1_tiny_en::*;
+    use super::rag_jina_reranker_v1_tiny_en::*;
     use pgrx::prelude::*;
 
     #[pg_test]

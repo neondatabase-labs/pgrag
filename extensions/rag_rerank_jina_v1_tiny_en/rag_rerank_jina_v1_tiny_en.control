@@ -1,6 +1,0 @@
-comment = 'rag_rerank_jina_v1_tiny_en: Created by pgrx'
-default_version = '@CARGO_VERSION@'
-module_pathname = '$libdir/rag_rerank_jina_v1_tiny_en'
-relocatable = false
-superuser = true
-requires = 'vector'

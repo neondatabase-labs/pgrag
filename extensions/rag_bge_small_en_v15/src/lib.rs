@@ -5,7 +5,7 @@ mod errors;
 pg_module_magic!();
 
 #[pg_schema]
-mod rag_embed_bge_small_en_v15 {
+mod rag_bge_small_en_v15 {
     use fastembed::{TextEmbedding, TokenizerFiles, UserDefinedEmbeddingModel};
     use pgrx::prelude::*;
     use std::cell::OnceCell;
@@ -64,15 +64,15 @@ mod rag_embed_bge_small_en_v15 {
     }
 
     extension_sql!(
-        "CREATE FUNCTION rag_embed_bge_small_en_v15.embedding_for_passage(input text) RETURNS vector(384)
+        "CREATE FUNCTION rag_bge_small_en_v15.embedding_for_passage(input text) RETURNS vector(384)
         LANGUAGE SQL IMMUTABLE STRICT AS $$
-            SELECT rag_embed_bge_small_en_v15._embedding(input)::vector(384);
+            SELECT rag_bge_small_en_v15._embedding(input)::vector(384);
         $$;
-        CREATE FUNCTION rag_embed_bge_small_en_v15.embedding_for_query(input text) RETURNS vector(384)
+        CREATE FUNCTION rag_bge_small_en_v15.embedding_for_query(input text) RETURNS vector(384)
         LANGUAGE SQL IMMUTABLE STRICT AS $$
-            SELECT rag_embed_bge_small_en_v15._embedding('Represent this sentence for searching relevant passages: ' || input)::vector(384);
+            SELECT rag_bge_small_en_v15._embedding('Represent this sentence for searching relevant passages: ' || input)::vector(384);
         $$;",
-        name = "embedding_bge_small_en_v15",
+        name = "embeddings",
     );
 }
 
@@ -81,16 +81,16 @@ mod rag_embed_bge_small_en_v15 {
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
-    use super::rag_embed_bge_small_en_v15::*;
+    use super::rag_bge_small_en_v15::*;
     use pgrx::prelude::*;
 
     #[pg_test]
-    fn test_embedding_bge_small_en_v15_length() {
+    fn test_embedding_length() {
         assert_eq!(_embedding("hello world!").len(), 384);
     }
 
     #[pg_test]
-    fn test_embedding_bge_small_en_v15_immutability() {
+    fn test_embedding_immutability() {
         assert_eq!(
             _embedding("hello world!"),
             _embedding("hello world!")
@@ -98,7 +98,7 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_embedding_bge_small_en_v15_variability() {
+    fn test_embedding_variability() {
         assert_ne!(
             _embedding("hello world!"),
             _embedding("bye moon!")

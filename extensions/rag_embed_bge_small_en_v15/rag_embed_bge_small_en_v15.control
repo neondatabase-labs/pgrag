@@ -1,6 +1,0 @@
-comment = 'rag_embed_bge_small_en_v15: Created by pgrx'
-default_version = '@CARGO_VERSION@'
-module_pathname = '$libdir/rag_embed_bge_small_en_v15'
-relocatable = false
-superuser = true
-requires = 'vector'

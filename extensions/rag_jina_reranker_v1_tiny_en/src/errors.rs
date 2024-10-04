@@ -1,6 +1,6 @@
 use pgrx::prelude::*;
 
-pub const ERR_PREFIX: &'static str = "[rag_embed_bge_small_en_v15]";
+pub const ERR_PREFIX: &'static str = "[rag_jina_reranker_v1_tiny_en]";
 
 pub trait UnwrapPgErrExt<T> {
     fn unwrap_or_pg_err(self, msg: &str) -> T;

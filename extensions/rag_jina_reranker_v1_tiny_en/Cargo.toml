@@ -1,5 +1,5 @@
 [package]
-name = "rag_embed_bge_small_en_v15"
+name = "rag_jina_reranker_v1_tiny_en"
 version = "0.0.0"
 edition = "2021"
 
@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib", "lib"]
 
 [[bin]]
-name = "pgrx_embed_rag_embed_bge_small_en_v15"
+name = "pgrx_embed_rag_jina_reranker_v1_tiny_en"
 path = "./src/bin/pgrx_embed.rs"
 
 [features]
