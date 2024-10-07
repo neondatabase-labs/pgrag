@@ -8,7 +8,7 @@ mod rag {
 
     #[pg_extern(immutable, strict)]
     pub fn markdown_from_html(document: &str) -> String {
-        let converter = HtmlToMarkdown::builder().skip_tags(vec!["script", "style"]).build();
+        let converter = HtmlToMarkdown::builder().skip_tags(vec!["head", "script", "style"]).build();
         converter.convert(document).expect_or_pg_err("Error converting HTML to Markdown")
     }
 }
