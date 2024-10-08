@@ -55,7 +55,7 @@ Next, download the extensions source, and (if you are building the embedding or 
 * `cd lib/bge_small_en_v15 && tar xzf model.onnx.tar.gz && cd ../..`
 * `cd lib/jina_reranker_v1_tiny_en && tar xzf model.onnx.tar.gz && cd ../..`
 
-Then (with Rust installed):
+Then (with up-to-date Rust installed):
 
 * `cargo install --locked cargo-pgrx@0.12.5`
 
@@ -64,7 +64,7 @@ Finally, inside each of the three folders inside `extensions`:
 * `PG_CONFIG=/path/to/pg_config cargo pgrx install --release`
 
 
-## Installation notes
+## ORT/ONNX installation notes
 
 * The `ort` package supplies precompiled binaries for the ONNX runtime. On some platforms, this may give rise to `undefined symbol` errors. In that case, you'll need to compile an ONNX runtime v18 yourself. On Debian, that looks something like this:
 
