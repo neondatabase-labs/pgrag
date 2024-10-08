@@ -275,7 +275,7 @@ Let's query the embeddings and rerank the results (still all done locally).
 ```sql
 \set query 'what is [...]? how does it work?'
 
-with naive_ordered as (
+with ranked as (
   select
     id, doc_id, chunk, embedding <=> rag_bge_small_en_v15.embedding_for_query(:'query') as cosine_distance
   from embeddings
@@ -283,7 +283,7 @@ with naive_ordered as (
   limit 10
 )
 select *, rag_jina_reranker_v1_tiny_en.rerank_distance(:'query', chunk)
-from naive_ordered
+from ranked
 order by rerank_distance;
 ```
 
@@ -292,7 +292,7 @@ Building on that, now we can also feed the query and top chunks to remote ChatGP
 ```sql
 \set query 'what is [...]? how does it work?'
 
-with naive_ordered as (
+with ranked as (
   select
     id, doc_id, chunk, embedding <=> rag_bge_small_en_v15.embedding_for_query(:'query') as cosine_distance
   from embeddings
@@ -301,7 +301,7 @@ with naive_ordered as (
 ),
 reranked as (
   select *, rag_jina_reranker_v1_tiny_en.rerank_distance(:'query', chunk)
-  from naive_ordered
+  from ranked
   order by rerank_distance limit 5
 )
 select rag.openai_chat_completion(json_object(
