@@ -9,7 +9,7 @@ mod rag {
     #[pg_extern(immutable, strict)]
     pub fn text_from_pdf(document: &[u8]) -> String {
         let raw = pdf_extract::extract_text_from_mem(&document).expect_or_pg_err("Error extracting text from PDF");
-        raw.nfkc().collect()
+        raw.nfkc().collect()  // PDFs often contain ligatures: separate these out into individual characters
     }
 }
 
