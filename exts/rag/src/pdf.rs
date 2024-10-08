@@ -4,10 +4,12 @@ use pgrx::prelude::*;
 mod rag {
     use super::super::errors::*;
     use pgrx::prelude::*;
+    use unicode_normalization::UnicodeNormalization;
 
     #[pg_extern(immutable, strict)]
     pub fn text_from_pdf(document: &[u8]) -> String {
-        pdf_extract::extract_text_from_mem(&document).expect_or_pg_err("Error extracting text from PDF")
+        let raw = pdf_extract::extract_text_from_mem(&document).expect_or_pg_err("Error extracting text from PDF");
+        raw.nfkc().collect()
     }
 }
 
