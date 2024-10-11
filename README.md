@@ -41,45 +41,52 @@ These are packaged as separate extensions, because they are large (>100MB) and b
 
 First, you'll need to install `pgvector`. For example:
 
-```
-wget https://github.com/pgvector/pgvector/archive/refs/tags/v0.7.4.tar.gz
-tar xvzf v0.7.4.tar.gz
+```bash
+wget https://github.com/pgvector/pgvector/archive/refs/tags/v0.7.4.tar.gz -O pgvector-0.7.4.tar.gz
+tar xzf pgvector-0.7.4.tar.gz
 cd pgvector-0.7.4
-export PG_CONFIG=/path/to/pg_config  # should actually end with pg_config
+export PG_CONFIG=/path/to/pg_config  # not just a path: should actually end with `pg_config`
 make
 make install
 ```
 
-Next, download the extensions source, and (if you are building the embedding or reranking extensions) uncompress the model files:
+Next, download the extensions source, and (if you are building the embedding or reranking extensions) extract the relevant model files:
 
-* `cd lib/bge_small_en_v15 && tar xzf model.onnx.tar.gz && cd ../..`
-* `cd lib/jina_reranker_v1_tiny_en && tar xzf model.onnx.tar.gz && cd ../..`
+```bash
+cd lib/bge_small_en_v15 && tar xzf model.onnx.tar.gz && cd ../..
+cd lib/jina_reranker_v1_tiny_en && tar xzf model.onnx.tar.gz && cd ../..
+```
 
 Then (with up-to-date Rust installed):
 
-* `cargo install --locked cargo-pgrx@0.12.5`
+```bash
+cargo install --locked cargo-pgrx@0.12.5
+```
 
-Finally, inside each of the three folders inside `extensions`:
+Finally, inside each of the three folders inside `exts`:
 
-* `PG_CONFIG=/path/to/pg_config cargo pgrx install --release`
+```bash
+PG_CONFIG=/path/to/pg_config cargo pgrx install --release
+```
 
 
-## ORT/ONNX installation notes
+## ORT and ONNX installation notes
 
-* The `ort` package supplies precompiled binaries for the ONNX runtime. On some platforms, this may give rise to `undefined symbol` errors. In that case, you'll need to compile an ONNX runtime v18 yourself. On Debian, that looks something like this:
+* The `ort` package supplies precompiled binaries for the ONNX runtime. On some platforms, this may give rise to `undefined symbol` errors. In that case, you'll need to compile the ONNX runtime v18 yourself. On Debian, that looks something like this:
 
 ```bash
 apt-get update && apt-get install -y build-essential python3 python3-pip
 python3 -m pip install cmake
-wget https://github.com/microsoft/onnxruntime/archive/refs/tags/v1.18.1.tar.gz -O onnxruntime.tar.gz
-mkdir onnxruntime-src && cd onnxruntime-src && tar xzf ../onnxruntime.tar.gz --strip-components=1 -C .
+wget https://github.com/microsoft/onnxruntime/archive/refs/tags/v1.18.1.tar.gz -O onnxruntime-1.18.1.tar.gz
+tar xzf onnxruntime-1.18.1.tar.gz
+cd onnxruntime-1.18.1
 ./build.sh --config Release --parallel --skip_submodule_sync --skip_tests --allow_running_as_root
 ```
 
 And then when it comes to install the embedding/reranking extensions:
 
 ```bash
-ORT_LIB_LOCATION=/home/user/onnxruntime-src/build/Linux cargo pgrx install --release
+ORT_LIB_LOCATION=/path/to/onnxruntime-1.18.1/build/Linux cargo pgrx install --release
 ```
 
 * The `ort` and `ort-sys` packages are drawn from a local folder using `[patch.crates-io]` in `Cargo.toml` because (as at 2024-09-06) otherwise we can end up with `ort@2.0.0-rc.4` and `ort-sys@2.0.0-rc.5`, and this mismatch ends badly.
