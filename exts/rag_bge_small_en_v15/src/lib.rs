@@ -9,6 +9,7 @@ use errors::*;
 use pgrx::bgworkers::*;
 use pgrx::prelude::*;
 use std::cell::OnceCell;
+use tokio::time::{sleep, Duration};
 use tonic::{transport::Server, Request, Response, Status};
 
 use embeddings::embedding_generator_server::{EmbeddingGenerator, EmbeddingGeneratorServer};
@@ -21,7 +22,9 @@ pub struct BgeSmallEnV15EmbeddingGenerator {}
 impl EmbeddingGenerator for BgeSmallEnV15EmbeddingGenerator {
     async fn get_embedding(&self, request: Request<EmbeddingRequest>) -> Result<Response<EmbeddingReply>, Status> {
         let text = request.into_inner().text;
-        let reply = EmbeddingReply { embedding: vec![1.0] };
+        let reply = EmbeddingReply {
+            embedding: vec![text.len() as f32],
+        };
         Ok(Response::new(reply)) // Send back our formatted greeting
     }
 }
@@ -61,20 +64,30 @@ pub extern "C" fn _PG_init() {
 #[pg_guard]
 #[no_mangle]
 pub extern "C" fn rag_bge_small_en_v15_background_main(arg: pg_sys::Datum) {
-    let pid = unsafe { i64::from_polymorphic_datum(arg, false, pg_sys::INT8OID).unwrap_or_pg_err("No PID received") };
-
     // if we don't attach the SIGTERM handler, we'll never be able to exit via an external notification
-    BackgroundWorker::attach_signal_handlers(SignalWakeFlags::SIGHUP | SignalWakeFlags::SIGTERM);
+    BackgroundWorker::attach_signal_handlers(SignalWakeFlags::SIGTERM);
 
+    let pid = unsafe { i64::from_polymorphic_datum(arg, false, pg_sys::INT8OID).unwrap_or_pg_err("No PID received") };
     log!("{} started with PID argument: {}", BackgroundWorker::get_name(), pid);
 
-    let addr = "[::1]:50051".parse().expect_or_pg_err("Couldn't parse socket address");
-    let embedder = BgeSmallEnV15EmbeddingGenerator::default();
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let addr = "[::1]:50051".parse().expect_or_pg_err("Couldn't parse socket address");
+            let embedder = BgeSmallEnV15EmbeddingGenerator::default();
 
-    Server::builder()
-        .add_service(EmbeddingGeneratorServer::new(embedder))
-        .serve(addr)
-        .await?;
+            Server::builder()
+                .add_service(EmbeddingGeneratorServer::new(embedder))
+                .serve_with_shutdown(addr, async {
+                    while !BackgroundWorker::sigterm_received() {
+                        sleep(Duration::from_millis(1000)).await;
+                    }
+                })
+                .await
+                .expect_or_pg_err("Couldn't await server");
+        });
 
     // wake up every 10s or if we received a SIGTERM
     // while BackgroundWorker::wait_latch(Some(Duration::from_secs(10))) {
@@ -132,6 +145,32 @@ mod rag_bge_small_en_v15 {
                 tokenizer_files: local_tokenizer_files!($folder),
             }
         };
+    }
+
+    use embeddings::embedding_generator_client::EmbeddingGeneratorClient;
+    use embeddings::EmbeddingRequest;
+
+    pub mod embeddings {
+        tonic::include_proto!("embeddings");
+    }
+
+    #[pg_extern]
+    fn bgwtest(text: &str) -> Vec<f32> {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let mut client = EmbeddingGeneratorClient::connect("http://[::1]:50051")
+                    .await
+                    .expect_or_pg_err("Couldn't await connection to embedding server");
+                let request = tonic::Request::new(EmbeddingRequest { text: text.to_string() });
+                let response = client
+                    .get_embedding(request)
+                    .await
+                    .expect_or_pg_err("Couldn't await response from embedding server");
+                response.into_inner().embedding
+            })
     }
 
     // NOTE. It might be nice to expose this function directly, but as at 2024-07-08 pgrx
