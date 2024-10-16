@@ -1,0 +1,12 @@
+
+Background workers must be initialized in the extension's `_PG_init()` function and can only be started if loaded through the `shared_preload_libraries` configuration setting. So to use this extension you'll need to edit `postgresql.conf` and, depending on the platform, add:
+
+```
+shared_preload_libraries = 'rag_bge_small_en_v15.so'
+```
+
+or
+
+ ```
+shared_preload_libraries = 'rag_bge_small_en_v15.dylib'
+```

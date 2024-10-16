@@ -32,42 +32,22 @@ impl EmbeddingGenerator for BgeSmallEnV15EmbeddingGenerator {
         let reply = EmbeddingReply {
             embedding: vec![text.len() as f32],
         };
-        Ok(Response::new(reply)) // Send back our formatted greeting
+        Ok(Response::new(reply))
     }
 }
 
 pg_module_magic!();
 
-/*
-Background workers must be initialized in the extension's `_PG_init()` function
-and can only be started if loaded through the `shared_preload_libraries`
-configuration setting. So to use this extension you'll need to edit
-`postgresql.conf` and, depending on the platform, add:
-
-```
-shared_preload_libraries = 'rag_bge_small_en_v15.so'
-```
-
-or
-
- ```
-shared_preload_libraries = 'rag_bge_small_en_v15.dylib'
-```
-*/
-
 thread_local! {
-    static PIDCELL: OnceCell<i64> = OnceCell::new();
+    static PID_CELL: OnceCell<i64> = OnceCell::new();
 }
 
 #[pg_guard]
 pub extern "C" fn _PG_init() {
     let pid = std::process::id() as i64;
-    PIDCELL.with(|cell| {
-        cell.set(pid)
-            .expect_or_pg_err("Couldn't store PID for use in socket name")
-    });
+    PID_CELL.with(|cell| cell.set(pid).expect_or_pg_err("Couldn't store PID"));
 
-    BackgroundWorkerBuilder::new("rag_bge_small_en_v15-embeddings")
+    BackgroundWorkerBuilder::new("rag_bge_small_en_v15 embeddings")
         .set_function("rag_bge_small_en_v15_background_main")
         .set_library("rag_bge_small_en_v15")
         .set_argument(pid.into_datum())
@@ -91,7 +71,7 @@ pub extern "C" fn rag_bge_small_en_v15_background_main(arg: pg_sys::Datum) {
         .unwrap()
         .block_on(async {
             let path = &format!("{SOCKET_PATH}.{pid}");
-            fs::remove_file(path).unwrap_or_default();  // file may not exist: this is no problem
+            fs::remove_file(path).unwrap_or_default(); // file may not exist: this is no problem
             let uds = UnixListener::bind(path).expect_or_pg_err(&format!("Couldn't create socket at {path}"));
             fs::set_permissions(path, fs::Permissions::from_mode(0o777))
                 .expect_or_pg_err(&format!("Couldn't set permissions for {path}"));
@@ -105,18 +85,18 @@ pub extern "C" fn rag_bge_small_en_v15_background_main(arg: pg_sys::Datum) {
                     while !BackgroundWorker::sigterm_received() {
                         sleep(Duration::from_millis(1000)).await;
                     }
+                    log!("{name} received SIGTERM, exiting");
                 })
                 .await
                 .expect_or_pg_err("Couldn't await server");
         });
 
-    log!("{} exited", BackgroundWorker::get_name());
 }
 
 #[pg_schema]
 mod rag_bge_small_en_v15 {
     use super::errors::*;
-    use super::PIDCELL;
+    use super::PID_CELL;
     use super::SOCKET_PATH;
     use fastembed::{TextEmbedding, TokenizerFiles, UserDefinedEmbeddingModel};
     use hyper_util::rt::TokioIo;
@@ -165,7 +145,7 @@ mod rag_bge_small_en_v15 {
                 let channel = Endpoint::try_from("http://[::]:80") // URL is ignored but must be valid
                     .expect_or_pg_err("Failed to create endpoint")
                     .connect_with_connector(service_fn(|_: Uri| async {
-                        let pid = PIDCELL
+                        let pid = PID_CELL
                             .with(|cell| cell.get().cloned())
                             .unwrap_or_pg_err("Embedding process PID not found");
 
