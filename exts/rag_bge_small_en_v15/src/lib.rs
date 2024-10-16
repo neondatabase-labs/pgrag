@@ -1,16 +1,22 @@
 use pgrx::prelude::*;
 
-mod errors;
 mod chunk;
+mod errors;
 
 pg_module_magic!();
 
 #[pg_schema]
 mod rag_bge_small_en_v15 {
     use fastembed::{TextEmbedding, TokenizerFiles, UserDefinedEmbeddingModel};
+    use tokenizers::{
+        tokenizer::{AddedToken, PaddingParams, PaddingStrategy, TruncationParams},
+        DecoderWrapper, ModelWrapper, NormalizerWrapper, PostProcessorWrapper, PreTokenizerWrapper, TokenizerImpl,
+    };
+    use tract_onnx::prelude::*;
+
+    use super::errors::*;
     use pgrx::prelude::*;
     use std::cell::OnceCell;
-    use super::errors::*;
 
     macro_rules! local_tokenizer_files {
         // NOTE: macro assumes /unix/style/paths
@@ -55,6 +61,125 @@ mod rag_bge_small_en_v15 {
         })
     }
 
+    pub fn embedding_tract(input: &str) -> Vec<f32> {
+        thread_local! {
+            static TCELL: OnceCell<(
+                SimplePlan<TypedFact, Box<dyn TypedOp>, tract_onnx::prelude::Graph<TypedFact, Box<dyn TypedOp>>>,
+                TokenizerImpl<ModelWrapper, NormalizerWrapper, PreTokenizerWrapper, PostProcessorWrapper, DecoderWrapper>
+            )> = const { OnceCell::new() };
+        }
+        TCELL.with(|cell| {
+            let (model, tokenizer) = cell.get_or_init(|| {
+                let raw_model = include_bytes!("../../../lib/bge_small_en_v15/model.onnx");
+                let mut cursor = std::io::Cursor::new(raw_model);
+                let model = tract_onnx::onnx()
+                    .model_for_read(&mut cursor)
+                    .expect_or_pg_err("Couldn't read ONNX model")
+                    .into_optimized()
+                    .expect_or_pg_err("Couldn't optimize ONNX model")
+                    .into_runnable()
+                    .expect_or_pg_err("Couldn't make ONNX model runnable");
+
+                let mut tokenizer: tokenizers::Tokenizer =
+                    tokenizers::Tokenizer::from_bytes(include_bytes!("../../../lib/bge_small_en_v15/tokenizer.json"))
+                        .expect_or_pg_err("Couldn't load tokenizer.json");
+
+                let config: serde_json::Value =
+                    serde_json::from_slice(include_bytes!("../../../lib/bge_small_en_v15/config.json"))
+                        .expect_or_pg_err("Couldn't load config.json");
+
+                let special_tokens_map: serde_json::Value =
+                    serde_json::from_slice(include_bytes!("../../../lib/bge_small_en_v15/special_tokens_map.json"))
+                        .expect_or_pg_err("Couldn't load special_tokens_map.json");
+
+                let tokenizer_config: serde_json::Value =
+                    serde_json::from_slice(include_bytes!("../../../lib/bge_small_en_v15/tokenizer_config.json"))
+                        .expect_or_pg_err("Couldn't load tokenizer_config.json");
+
+                let model_max_length = tokenizer_config["model_max_length"]
+                    .as_f64()
+                    .unwrap_or_pg_err("Error reading model_max_length from tokenizer_config.json")
+                    as f32;
+
+                let max_length = model_max_length as usize;
+                let pad_id = config["pad_token_id"].as_u64().unwrap_or(0) as u32;
+                let pad_token = tokenizer_config["pad_token"]
+                    .as_str()
+                    .unwrap_or_pg_err("Error reading pad_token from tokenizer_config.json")
+                    .into();
+
+                let mut tokenizer = tokenizer
+                    .with_padding(Some(PaddingParams {
+                        strategy: PaddingStrategy::BatchLongest,
+                        pad_token,
+                        pad_id,
+                        ..Default::default()
+                    }))
+                    .with_truncation(Some(TruncationParams {
+                        max_length,
+                        ..Default::default()
+                    }))
+                    .expect_or_pg_err("Couldn't set truncation parameters")
+                    .clone();
+
+                if let serde_json::Value::Object(root_object) = special_tokens_map {
+                    for (_, value) in root_object.iter() {
+                        if value.is_string() {
+                            tokenizer.add_special_tokens(&[AddedToken {
+                                content: value.as_str().unwrap().into(),
+                                special: true,
+                                ..Default::default()
+                            }]);
+                        } else if value.is_object() {
+                            tokenizer.add_special_tokens(&[AddedToken {
+                                content: value["content"].as_str().unwrap().into(),
+                                special: true,
+                                single_word: value["single_word"].as_bool().unwrap(),
+                                lstrip: value["lstrip"].as_bool().unwrap(),
+                                rstrip: value["rstrip"].as_bool().unwrap(),
+                                normalized: value["normalized"].as_bool().unwrap(),
+                            }]);
+                        }
+                    }
+                }
+                (model, tokenizer)
+            });
+
+            // TODO: use tokenizer and embedding model!
+            let tokenizer_output = tokenizer
+                .encode(input, true)
+                .expect_or_pg_err("Couldn't tokenize string");
+            let input_ids = tokenizer_output.get_ids();
+            let attention_mask = tokenizer_output.get_attention_mask();
+            let token_type_ids = tokenizer_output.get_type_ids();
+            let length = input_ids.len();
+
+            let input_ids: Tensor =
+                tract_ndarray::Array2::from_shape_vec((1, length), input_ids.iter().map(|&x| x as i64).collect())
+                    .expect_or_pg_err("Couldn't create input IDs")
+                    .into();
+            let attention_mask: Tensor =
+                tract_ndarray::Array2::from_shape_vec((1, length), attention_mask.iter().map(|&x| x as i64).collect())
+                    .expect_or_pg_err("Couldn't create attention mask")
+                    .into();
+            let token_type_ids: Tensor =
+                tract_ndarray::Array2::from_shape_vec((1, length), token_type_ids.iter().map(|&x| x as i64).collect())
+                    .expect_or_pg_err("Couldn't create token type IDs")
+                    .into();
+
+            let outputs = model
+                .run(tvec!(input_ids.into(), attention_mask.into(), token_type_ids.into()))
+                .expect_or_pg_err("Couldn't run embedding model");
+
+            let logits: Vec<f32> = outputs[0]
+                .to_array_view::<f32>()
+                .expect_or_pg_err("Couldn't make results into array")
+                .iter().map(|&x| x).collect();
+
+            logits
+        })
+    }
+
     #[pg_extern(immutable, strict)]
     pub fn _embedding(input: &str) -> Vec<f32> {
         let vectors = embeddings(vec![input]);
@@ -92,18 +217,17 @@ mod tests {
 
     #[pg_test]
     fn test_embedding_immutability() {
-        assert_eq!(
-            _embedding("hello world!"),
-            _embedding("hello world!")
-        );
+        assert_eq!(_embedding("hello world!"), _embedding("hello world!"));
     }
 
     #[pg_test]
     fn test_embedding_variability() {
-        assert_ne!(
-            _embedding("hello world!"),
-            _embedding("bye moon!")
-        );
+        assert_ne!(_embedding("hello world!"), _embedding("bye moon!"));
+    }
+
+    #[pg_test]
+    fn test_embedding_tract() {
+        assert_eq!(embedding_tract("hello world!"), vec![0.0]);
     }
 }
 
