@@ -1,4 +1,5 @@
 use errors::*;
+use fastembed::{TextEmbedding, TokenizerFiles, UserDefinedEmbeddingModel};
 use pgrx::bgworkers::*;
 use pgrx::prelude::*;
 use std::cell::OnceCell;
@@ -22,24 +23,36 @@ mod errors;
 
 static SOCKET_PATH: &str = "/tmp/.s.pgrag_bge_small_en_v15";
 
-#[derive(Debug, Default)]
-pub struct BgeSmallEnV15EmbeddingGenerator {}
-
-#[tonic::async_trait]
-impl EmbeddingGenerator for BgeSmallEnV15EmbeddingGenerator {
-    async fn get_embedding(&self, request: Request<EmbeddingRequest>) -> Result<Response<EmbeddingReply>, Status> {
-        let text = request.into_inner().text;
-        let reply = EmbeddingReply {
-            embedding: vec![text.len() as f32],
-        };
-        Ok(Response::new(reply))
-    }
+macro_rules! local_tokenizer_files {
+    // NOTE: macro assumes /unix/style/paths
+    ($folder:literal) => {
+        TokenizerFiles {
+            tokenizer_file: include_bytes!(concat!($folder, "/tokenizer.json")).to_vec(),
+            config_file: include_bytes!(concat!($folder, "/config.json")).to_vec(),
+            special_tokens_map_file: include_bytes!(concat!($folder, "/special_tokens_map.json")).to_vec(),
+            tokenizer_config_file: include_bytes!(concat!($folder, "/tokenizer_config.json")).to_vec(),
+        }
+    };
 }
+
+macro_rules! local_model {
+    // NOTE: macro assumes /unix/style/paths
+    ($model:ident, $folder:literal) => {
+        $model {
+            onnx_file: include_bytes!(concat!($folder, "/model.onnx")).to_vec(),
+            tokenizer_files: local_tokenizer_files!($folder),
+        }
+    };
+}
+
+#[derive(Debug, Default)]
+pub struct EmbeddingGeneratorStruct {}
 
 pg_module_magic!();
 
 thread_local! {
     static PID_CELL: OnceCell<i64> = OnceCell::new();
+    static TEXT_EMBEDDING_CELL: OnceCell<TextEmbedding> = const { OnceCell::new() };
 }
 
 #[pg_guard]
@@ -47,12 +60,34 @@ pub extern "C" fn _PG_init() {
     let pid = std::process::id() as i64;
     PID_CELL.with(|cell| cell.set(pid).expect_or_pg_err("Couldn't store PID"));
 
-    BackgroundWorkerBuilder::new("rag_bge_small_en_v15 embeddings")
+    BackgroundWorkerBuilder::new("rag_bge_small_en_v15 embeddings background worker")
         .set_function("rag_bge_small_en_v15_background_main")
         .set_library("rag_bge_small_en_v15")
         .set_argument(pid.into_datum())
         .enable_spi_access()
         .load();
+}
+
+#[tonic::async_trait]
+impl EmbeddingGenerator for EmbeddingGeneratorStruct {
+    async fn get_embedding(&self, request: Request<EmbeddingRequest>) -> Result<Response<EmbeddingReply>, Status> {
+        TEXT_EMBEDDING_CELL.with(|cell| {
+            let model = cell.get_or_init(|| {
+                let user_def_model = local_model!(UserDefinedEmbeddingModel, "../../../lib/bge_small_en_v15");
+                TextEmbedding::try_new_from_user_defined(user_def_model, Default::default())
+                    .expect_or_pg_err("Couldn't load embedding model")
+            });
+
+            let text = request.into_inner().text;
+            let embeddings = model
+                .embed(vec![text], None)
+                .expect_or_pg_err("Couldn't generate embeddings");
+
+            let embedding = embeddings.into_iter().next().unwrap_or_pg_err("Empty result vector");
+            let reply = EmbeddingReply { embedding };
+            Ok(Response::new(reply))
+        })
+    }
 }
 
 #[pg_guard]
@@ -65,10 +100,10 @@ pub extern "C" fn rag_bge_small_en_v15_background_main(arg: pg_sys::Datum) {
     let name = BackgroundWorker::get_name();
     log!("{name} started by PID {pid}");
 
-    tokio::runtime::Builder::new_multi_thread()
+    tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .unwrap()
+        .expect_or_pg_err("Couldn't build runtime for server")
         .block_on(async {
             let path = &format!("{SOCKET_PATH}.{pid}");
             fs::remove_file(path).unwrap_or_default(); // file may not exist: this is no problem
@@ -77,7 +112,7 @@ pub extern "C" fn rag_bge_small_en_v15_background_main(arg: pg_sys::Datum) {
                 .expect_or_pg_err(&format!("Couldn't set permissions for {path}"));
             log!("{name} created socket {}", path);
             let uds_stream = UnixListenerStream::new(uds);
-            let embedder = BgeSmallEnV15EmbeddingGenerator::default();
+            let embedder = EmbeddingGeneratorStruct::default();
 
             Server::builder()
                 .add_service(EmbeddingGeneratorServer::new(embedder))
@@ -85,12 +120,10 @@ pub extern "C" fn rag_bge_small_en_v15_background_main(arg: pg_sys::Datum) {
                     while !BackgroundWorker::sigterm_received() {
                         sleep(Duration::from_millis(1000)).await;
                     }
-                    log!("{name} received SIGTERM, exiting");
                 })
                 .await
-                .expect_or_pg_err("Couldn't await server");
+                .expect_or_pg_err("Couldn't create server");
         });
-
 }
 
 #[pg_schema]
@@ -140,32 +173,33 @@ mod rag_bge_small_en_v15 {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .unwrap()
+            .expect_or_pg_err("Couldn't build tokio runtime for client")
             .block_on(async {
-                let channel = Endpoint::try_from("http://[::]:80") // URL is ignored but must be valid
+                let channel = Endpoint::try_from("http://[::]:80") // URL must be valid but is ignored
                     .expect_or_pg_err("Failed to create endpoint")
                     .connect_with_connector(service_fn(|_: Uri| async {
-                        let pid = PID_CELL
-                            .with(|cell| cell.get().cloned())
-                            .unwrap_or_pg_err("Embedding process PID not found");
+                        let pid = PID_CELL.with(|cell| {
+                            cell.get()
+                                .unwrap_or_pg_err("Couldn't retrieve PID of launching process")
+                                .clone()
+                        });
 
                         let path = &format!("{SOCKET_PATH}.{pid}");
-
                         Ok::<_, std::io::Error>(TokioIo::new(
                             UnixStream::connect(path)
                                 .await
-                                .expect_or_pg_err("Failed to connect to stream"),
+                                .expect_or_pg_err("Couldn't connect embedding worker stream"),
                         ))
                     }))
                     .await
-                    .expect_or_pg_err("Failed to connect connector");
+                    .expect_or_pg_err("Couldn't connect embedding worker channel");
 
                 let mut client = EmbeddingGeneratorClient::new(channel);
                 let request = tonic::Request::new(EmbeddingRequest { text: text.to_string() });
                 let response = client
                     .get_embedding(request)
                     .await
-                    .expect_or_pg_err("Couldn't await response from embedding server");
+                    .expect_or_pg_err("Couldn't get response from embedding worker");
 
                 response.into_inner().embedding
             })
