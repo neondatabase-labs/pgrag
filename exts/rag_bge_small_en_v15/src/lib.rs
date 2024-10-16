@@ -1,16 +1,116 @@
-use pgrx::prelude::*;
+pub mod embeddings {
+    tonic::include_proto!("embeddings");
+}
 
-mod errors;
 mod chunk;
+mod errors;
+
+use errors::*;
+use pgrx::bgworkers::*;
+use pgrx::prelude::*;
+use std::cell::OnceCell;
+use tonic::{transport::Server, Request, Response, Status};
+
+use embeddings::embedding_generator_server::{EmbeddingGenerator, EmbeddingGeneratorServer};
+use embeddings::{EmbeddingReply, EmbeddingRequest};
+
+#[derive(Debug, Default)]
+pub struct BgeSmallEnV15EmbeddingGenerator {}
+
+#[tonic::async_trait]
+impl EmbeddingGenerator for BgeSmallEnV15EmbeddingGenerator {
+    async fn get_embedding(&self, request: Request<EmbeddingRequest>) -> Result<Response<EmbeddingReply>, Status> {
+        let text = request.into_inner().text;
+        let reply = EmbeddingReply { embedding: vec![1.0] };
+        Ok(Response::new(reply)) // Send back our formatted greeting
+    }
+}
 
 pg_module_magic!();
 
+/*
+    In order to use this extension with pgrx, you'll need to edit `postgresql.conf` and add:
+
+    ```
+    shared_preload_libraries = 'rag_bge_small_en_v15.so'
+    ```
+
+    On Mac, you may need a `.dylib` path instead.
+
+    Background workers **must** be initialized in the extension's `_PG_init()` function, and can **only**
+    be started if loaded through the `shared_preload_libraries` configuration setting.
+*/
+
+thread_local! {
+    static PIDCELL: OnceCell<i64> = OnceCell::new();
+}
+
+#[pg_guard]
+pub extern "C" fn _PG_init() {
+    let pid = std::process::id() as i64;
+    PIDCELL.with(|cell| cell.set(pid).unwrap());
+
+    BackgroundWorkerBuilder::new("rag_bge_small_en_v15-embeddings")
+        .set_function("rag_bge_small_en_v15_background_main")
+        .set_library("rag_bge_small_en_v15")
+        .set_argument(pid.into_datum())
+        .enable_spi_access()
+        .load();
+}
+
+#[pg_guard]
+#[no_mangle]
+pub extern "C" fn rag_bge_small_en_v15_background_main(arg: pg_sys::Datum) {
+    let pid = unsafe { i64::from_polymorphic_datum(arg, false, pg_sys::INT8OID).unwrap_or_pg_err("No PID received") };
+
+    // if we don't attach the SIGTERM handler, we'll never be able to exit via an external notification
+    BackgroundWorker::attach_signal_handlers(SignalWakeFlags::SIGHUP | SignalWakeFlags::SIGTERM);
+
+    log!("{} started with PID argument: {}", BackgroundWorker::get_name(), pid);
+
+    let addr = "[::1]:50051".parse().expect_or_pg_err("Couldn't parse socket address");
+    let embedder = BgeSmallEnV15EmbeddingGenerator::default();
+
+    Server::builder()
+        .add_service(EmbeddingGeneratorServer::new(embedder))
+        .serve(addr)
+        .await?;
+
+    // wake up every 10s or if we received a SIGTERM
+    // while BackgroundWorker::wait_latch(Some(Duration::from_secs(10))) {
+    //     if BackgroundWorker::sighup_received() {
+    //         // on SIGHUP, you might want to reload some external configuration or something
+    //     }
+
+    //     // within a transaction, execute an SQL statement, and log its results
+    //     let result: Result<(), pgrx::spi::Error> = BackgroundWorker::transaction(|| {
+    //         Spi::connect(|client| {
+    //             let tuple_table = client.select(
+    //                 "SELECT 'Hi', id, ''||a FROM (SELECT id, 42 from generate_series(1,10) id) a ",
+    //                 None,
+    //                 None,
+    //             )?;
+    //             for tuple in tuple_table {
+    //                 let a = tuple.get_datum_by_ordinal(1)?.value::<String>()?;
+    //                 let b = tuple.get_datum_by_ordinal(2)?.value::<i32>()?;
+    //                 let c = tuple.get_datum_by_ordinal(3)?.value::<String>()?;
+    //                 log!("from bgworker: ({:?}, {:?}, {:?})", a, b, c);
+    //             }
+    //             Ok(())
+    //         })
+    //     });
+    //     result.unwrap_or_else(|e| panic!("got an error: {}", e))
+    // }
+
+    log!("{} exited", BackgroundWorker::get_name());
+}
+
 #[pg_schema]
 mod rag_bge_small_en_v15 {
+    use super::errors::*;
     use fastembed::{TextEmbedding, TokenizerFiles, UserDefinedEmbeddingModel};
     use pgrx::prelude::*;
     use std::cell::OnceCell;
-    use super::errors::*;
 
     macro_rules! local_tokenizer_files {
         // NOTE: macro assumes /unix/style/paths
@@ -92,18 +192,12 @@ mod tests {
 
     #[pg_test]
     fn test_embedding_immutability() {
-        assert_eq!(
-            _embedding("hello world!"),
-            _embedding("hello world!")
-        );
+        assert_eq!(_embedding("hello world!"), _embedding("hello world!"));
     }
 
     #[pg_test]
     fn test_embedding_variability() {
-        assert_ne!(
-            _embedding("hello world!"),
-            _embedding("bye moon!")
-        );
+        assert_ne!(_embedding("hello world!"), _embedding("bye moon!"));
     }
 }
 
