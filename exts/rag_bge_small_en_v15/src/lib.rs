@@ -1,19 +1,26 @@
-pub mod embeddings {
-    tonic::include_proto!("embeddings");
-}
-
-mod chunk;
-mod errors;
-
 use errors::*;
 use pgrx::bgworkers::*;
 use pgrx::prelude::*;
 use std::cell::OnceCell;
-use tokio::time::{sleep, Duration};
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use tokio::{
+    net::UnixListener,
+    time::{sleep, Duration},
+};
+use tokio_stream::wrappers::UnixListenerStream;
 use tonic::{transport::Server, Request, Response, Status};
 
+pub mod embeddings {
+    tonic::include_proto!("embeddings");
+}
 use embeddings::embedding_generator_server::{EmbeddingGenerator, EmbeddingGeneratorServer};
 use embeddings::{EmbeddingReply, EmbeddingRequest};
+
+mod chunk;
+mod errors;
+
+static SOCKET_PATH: &str = "/tmp/.s.pgrag_bge_small_en_v15";
 
 #[derive(Debug, Default)]
 pub struct BgeSmallEnV15EmbeddingGenerator {}
@@ -32,16 +39,20 @@ impl EmbeddingGenerator for BgeSmallEnV15EmbeddingGenerator {
 pg_module_magic!();
 
 /*
-    In order to use this extension with pgrx, you'll need to edit `postgresql.conf` and add:
+Background workers must be initialized in the extension's `_PG_init()` function
+and can only be started if loaded through the `shared_preload_libraries`
+configuration setting. So to use this extension you'll need to edit
+`postgresql.conf` and, depending on the platform, add:
 
-    ```
-    shared_preload_libraries = 'rag_bge_small_en_v15.so'
-    ```
+```
+shared_preload_libraries = 'rag_bge_small_en_v15.so'
+```
 
-    On Mac, you may need a `.dylib` path instead.
+or
 
-    Background workers **must** be initialized in the extension's `_PG_init()` function, and can **only**
-    be started if loaded through the `shared_preload_libraries` configuration setting.
+ ```
+shared_preload_libraries = 'rag_bge_small_en_v15.dylib'
+```
 */
 
 thread_local! {
@@ -51,7 +62,10 @@ thread_local! {
 #[pg_guard]
 pub extern "C" fn _PG_init() {
     let pid = std::process::id() as i64;
-    PIDCELL.with(|cell| cell.set(pid).unwrap());
+    PIDCELL.with(|cell| {
+        cell.set(pid)
+            .expect_or_pg_err("Couldn't store PID for use in socket name")
+    });
 
     BackgroundWorkerBuilder::new("rag_bge_small_en_v15-embeddings")
         .set_function("rag_bge_small_en_v15_background_main")
@@ -68,19 +82,26 @@ pub extern "C" fn rag_bge_small_en_v15_background_main(arg: pg_sys::Datum) {
     BackgroundWorker::attach_signal_handlers(SignalWakeFlags::SIGTERM);
 
     let pid = unsafe { i64::from_polymorphic_datum(arg, false, pg_sys::INT8OID).unwrap_or_pg_err("No PID received") };
-    log!("{} started with PID argument: {}", BackgroundWorker::get_name(), pid);
+    let name = BackgroundWorker::get_name();
+    log!("{name} started by PID {pid}");
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap()
         .block_on(async {
-            let addr = "[::1]:50051".parse().expect_or_pg_err("Couldn't parse socket address");
+            let path = &format!("{SOCKET_PATH}.{pid}");
+            fs::remove_file(path).unwrap_or_default();  // file may not exist: this is no problem
+            let uds = UnixListener::bind(path).expect_or_pg_err(&format!("Couldn't create socket at {path}"));
+            fs::set_permissions(path, fs::Permissions::from_mode(0o777))
+                .expect_or_pg_err(&format!("Couldn't set permissions for {path}"));
+            log!("{name} created socket {}", path);
+            let uds_stream = UnixListenerStream::new(uds);
             let embedder = BgeSmallEnV15EmbeddingGenerator::default();
 
             Server::builder()
                 .add_service(EmbeddingGeneratorServer::new(embedder))
-                .serve_with_shutdown(addr, async {
+                .serve_with_incoming_shutdown(uds_stream, async {
                     while !BackgroundWorker::sigterm_received() {
                         sleep(Duration::from_millis(1000)).await;
                     }
@@ -89,41 +110,21 @@ pub extern "C" fn rag_bge_small_en_v15_background_main(arg: pg_sys::Datum) {
                 .expect_or_pg_err("Couldn't await server");
         });
 
-    // wake up every 10s or if we received a SIGTERM
-    // while BackgroundWorker::wait_latch(Some(Duration::from_secs(10))) {
-    //     if BackgroundWorker::sighup_received() {
-    //         // on SIGHUP, you might want to reload some external configuration or something
-    //     }
-
-    //     // within a transaction, execute an SQL statement, and log its results
-    //     let result: Result<(), pgrx::spi::Error> = BackgroundWorker::transaction(|| {
-    //         Spi::connect(|client| {
-    //             let tuple_table = client.select(
-    //                 "SELECT 'Hi', id, ''||a FROM (SELECT id, 42 from generate_series(1,10) id) a ",
-    //                 None,
-    //                 None,
-    //             )?;
-    //             for tuple in tuple_table {
-    //                 let a = tuple.get_datum_by_ordinal(1)?.value::<String>()?;
-    //                 let b = tuple.get_datum_by_ordinal(2)?.value::<i32>()?;
-    //                 let c = tuple.get_datum_by_ordinal(3)?.value::<String>()?;
-    //                 log!("from bgworker: ({:?}, {:?}, {:?})", a, b, c);
-    //             }
-    //             Ok(())
-    //         })
-    //     });
-    //     result.unwrap_or_else(|e| panic!("got an error: {}", e))
-    // }
-
     log!("{} exited", BackgroundWorker::get_name());
 }
 
 #[pg_schema]
 mod rag_bge_small_en_v15 {
     use super::errors::*;
+    use super::PIDCELL;
+    use super::SOCKET_PATH;
     use fastembed::{TextEmbedding, TokenizerFiles, UserDefinedEmbeddingModel};
+    use hyper_util::rt::TokioIo;
     use pgrx::prelude::*;
     use std::cell::OnceCell;
+    use tokio::net::UnixStream;
+    use tonic::transport::{Endpoint, Uri};
+    use tower::service_fn;
 
     macro_rules! local_tokenizer_files {
         // NOTE: macro assumes /unix/style/paths
@@ -161,14 +162,31 @@ mod rag_bge_small_en_v15 {
             .build()
             .unwrap()
             .block_on(async {
-                let mut client = EmbeddingGeneratorClient::connect("http://[::1]:50051")
+                let channel = Endpoint::try_from("http://[::]:80") // URL is ignored but must be valid
+                    .expect_or_pg_err("Failed to create endpoint")
+                    .connect_with_connector(service_fn(|_: Uri| async {
+                        let pid = PIDCELL
+                            .with(|cell| cell.get().cloned())
+                            .unwrap_or_pg_err("Embedding process PID not found");
+
+                        let path = &format!("{SOCKET_PATH}.{pid}");
+
+                        Ok::<_, std::io::Error>(TokioIo::new(
+                            UnixStream::connect(path)
+                                .await
+                                .expect_or_pg_err("Failed to connect to stream"),
+                        ))
+                    }))
                     .await
-                    .expect_or_pg_err("Couldn't await connection to embedding server");
+                    .expect_or_pg_err("Failed to connect connector");
+
+                let mut client = EmbeddingGeneratorClient::new(channel);
                 let request = tonic::Request::new(EmbeddingRequest { text: text.to_string() });
                 let response = client
                     .get_embedding(request)
                     .await
                     .expect_or_pg_err("Couldn't await response from embedding server");
+
                 response.into_inner().embedding
             })
     }
