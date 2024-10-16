@@ -12,11 +12,12 @@ mod rag_bge_small_en_v15 {
         tokenizer::{AddedToken, PaddingParams, PaddingStrategy, TruncationParams},
         DecoderWrapper, ModelWrapper, NormalizerWrapper, PostProcessorWrapper, PreTokenizerWrapper, TokenizerImpl,
     };
+    use tract_ndarray::s;
     use tract_onnx::prelude::*;
 
     use super::errors::*;
     use pgrx::prelude::*;
-    use std::cell::OnceCell;
+    use std::{cell::OnceCell, io::Cursor};
 
     macro_rules! local_tokenizer_files {
         // NOTE: macro assumes /unix/style/paths
@@ -61,6 +62,13 @@ mod rag_bge_small_en_v15 {
         })
     }
 
+    pub fn normalize(v: &[f32]) -> Vec<f32> {
+        let norm = (v.iter().map(|val| val * val).sum::<f32>()).sqrt();
+        let epsilon = 1e-12; // add a super-small epsilon to avoid dividing by zero
+        v.iter().map(|&val| val / (norm + epsilon)).collect()
+    }
+
+    #[pg_extern(immutable, strict)]
     pub fn embedding_tract(input: &str) -> Vec<f32> {
         thread_local! {
             static TCELL: OnceCell<(
@@ -71,7 +79,7 @@ mod rag_bge_small_en_v15 {
         TCELL.with(|cell| {
             let (model, tokenizer) = cell.get_or_init(|| {
                 let raw_model = include_bytes!("../../../lib/bge_small_en_v15/model.onnx");
-                let mut cursor = std::io::Cursor::new(raw_model);
+                let mut cursor = Cursor::new(raw_model);
                 let model = tract_onnx::onnx()
                     .model_for_read(&mut cursor)
                     .expect_or_pg_err("Couldn't read ONNX model")
@@ -96,12 +104,11 @@ mod rag_bge_small_en_v15 {
                     serde_json::from_slice(include_bytes!("../../../lib/bge_small_en_v15/tokenizer_config.json"))
                         .expect_or_pg_err("Couldn't load tokenizer_config.json");
 
-                let model_max_length = tokenizer_config["model_max_length"]
+                let max_length = tokenizer_config["model_max_length"]
                     .as_f64()
                     .unwrap_or_pg_err("Error reading model_max_length from tokenizer_config.json")
-                    as f32;
+                    as usize;
 
-                let max_length = model_max_length as usize;
                 let pad_id = config["pad_token_id"].as_u64().unwrap_or(0) as u32;
                 let pad_token = tokenizer_config["pad_token"]
                     .as_str()
@@ -145,10 +152,10 @@ mod rag_bge_small_en_v15 {
                 (model, tokenizer)
             });
 
-            // TODO: use tokenizer and embedding model!
             let tokenizer_output = tokenizer
                 .encode(input, true)
                 .expect_or_pg_err("Couldn't tokenize string");
+
             let input_ids = tokenizer_output.get_ids();
             let attention_mask = tokenizer_output.get_attention_mask();
             let token_type_ids = tokenizer_output.get_type_ids();
@@ -158,10 +165,12 @@ mod rag_bge_small_en_v15 {
                 tract_ndarray::Array2::from_shape_vec((1, length), input_ids.iter().map(|&x| x as i64).collect())
                     .expect_or_pg_err("Couldn't create input IDs")
                     .into();
+
             let attention_mask: Tensor =
                 tract_ndarray::Array2::from_shape_vec((1, length), attention_mask.iter().map(|&x| x as i64).collect())
                     .expect_or_pg_err("Couldn't create attention mask")
                     .into();
+
             let token_type_ids: Tensor =
                 tract_ndarray::Array2::from_shape_vec((1, length), token_type_ids.iter().map(|&x| x as i64).collect())
                     .expect_or_pg_err("Couldn't create token type IDs")
@@ -171,12 +180,16 @@ mod rag_bge_small_en_v15 {
                 .run(tvec!(input_ids.into(), attention_mask.into(), token_type_ids.into()))
                 .expect_or_pg_err("Couldn't run embedding model");
 
-            let logits: Vec<f32> = outputs[0]
+            let output = &outputs[0];
+            let logits: Vec<f32> = output
                 .to_array_view::<f32>()
                 .expect_or_pg_err("Couldn't make results into array")
-                .iter().map(|&x| x).collect();
+                .slice(s![.., -1, ..])
+                .iter()
+                .map(|&x| x)
+                .collect();
 
-            logits
+            normalize(&logits)
         })
     }
 
@@ -226,8 +239,21 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_embedding_tract() {
-        assert_eq!(embedding_tract("hello world!"), vec![0.0]);
+    fn test_embedding_tract_length() {
+        assert_eq!(embedding_tract("hello world!").len(), 384);
+    }
+
+    fn approx_equal(a: Vec<f32>, b: Vec<f32>, epsilon: f32) -> bool {
+        a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| (x - y).abs() < epsilon)
+    }
+
+    #[pg_test]
+    fn test_embedding_tract_eq() {
+        assert!(approx_equal(
+            embedding_tract("hello world!"),
+            _embedding("hello world!"),
+            0.0001
+        ));
     }
 }
 
