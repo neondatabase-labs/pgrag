@@ -132,6 +132,7 @@ async fn bg_worker_tonic_main(name: &str, pid: i64) {
         },
         Err(_) => 0, // automatic:
     };
+    log!("{} passing {} to num_threads()", name, num_threads);
 
     let uds_stream = UnixListenerStream::new(uds);
     let embedder = EmbeddingGeneratorStruct {
