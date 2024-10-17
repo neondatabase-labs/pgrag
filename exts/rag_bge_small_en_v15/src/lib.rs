@@ -8,7 +8,7 @@ use const_format::formatcp;
 use embeddings::embedding_generator_server::{EmbeddingGenerator, EmbeddingGeneratorServer};
 use embeddings::{EmbeddingReply, EmbeddingRequest};
 use errors::*;
-use fastembed::{TextEmbedding, TokenizerFiles, UserDefinedEmbeddingModel};
+use fastembed::{TextEmbedding, TokenizerFiles, UserDefinedEmbeddingModel, Pooling, QuantizationMode};
 use pgrx::bgworkers::*;
 use pgrx::prelude::*;
 use std::cell::OnceCell;
@@ -44,10 +44,9 @@ macro_rules! local_tokenizer_files {
 
 macro_rules! local_model {
     ($model:ident, $folder:literal) => {
-        $model {
-            onnx_file: include_bytes!(concat!($folder, "/model.onnx")).to_vec(),
-            tokenizer_files: local_tokenizer_files!($folder),
-        }
+        $model::new(include_bytes!(concat!($folder, "/model.onnx")).to_vec(), local_tokenizer_files!($folder))
+          .with_pooling(Pooling::Cls)
+          .with_quantization(QuantizationMode::Static)
     };
 }
 
