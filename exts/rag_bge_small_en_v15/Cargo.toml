@@ -33,6 +33,7 @@ tokio-stream = "0.1.16"
 tower = "0.5.1"
 hyper-util = "0.1.9"
 const_format = "0.2.33"
+rayon = "1.10.0"
 
 [build-dependencies]
 tonic-build = "0.12.3"

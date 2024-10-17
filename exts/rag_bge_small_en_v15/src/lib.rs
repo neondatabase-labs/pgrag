@@ -8,12 +8,14 @@ use const_format::formatcp;
 use embeddings::embedding_generator_server::{EmbeddingGenerator, EmbeddingGeneratorServer};
 use embeddings::{EmbeddingReply, EmbeddingRequest};
 use errors::*;
-use fastembed::{TextEmbedding, TokenizerFiles, UserDefinedEmbeddingModel, Pooling, QuantizationMode};
+use fastembed::{Pooling, QuantizationMode, TextEmbedding, TokenizerFiles, UserDefinedEmbeddingModel};
 use pgrx::bgworkers::*;
 use pgrx::prelude::*;
+use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::cell::OnceCell;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+use std::sync::OnceLock;
 use tokio::{
     net::UnixListener,
     time::{sleep, Duration},
@@ -28,8 +30,8 @@ pg_module_magic!();
 
 thread_local! {
     static PID_CELL: OnceCell<i64> = OnceCell::new();
-    static TEXT_EMBEDDING_CELL: OnceCell<TextEmbedding> = const { OnceCell::new() };
 }
+static TEXT_EMBEDDING: OnceLock<TextEmbedding> = OnceLock::new();
 
 macro_rules! local_tokenizer_files {
     ($folder:literal) => {
@@ -44,9 +46,12 @@ macro_rules! local_tokenizer_files {
 
 macro_rules! local_model {
     ($model:ident, $folder:literal) => {
-        $model::new(include_bytes!(concat!($folder, "/model.onnx")).to_vec(), local_tokenizer_files!($folder))
-          .with_pooling(Pooling::Cls)
-          .with_quantization(QuantizationMode::Static)
+        $model::new(
+            include_bytes!(concat!($folder, "/model.onnx")).to_vec(),
+            local_tokenizer_files!($folder),
+        )
+        .with_pooling(Pooling::Cls)
+        .with_quantization(QuantizationMode::Static)
     };
 }
 
@@ -63,28 +68,39 @@ pub extern "C" fn _PG_init() {
         .load();
 }
 
-#[derive(Debug, Default)]
-pub struct EmbeddingGeneratorStruct {}
+pub struct EmbeddingGeneratorStruct {
+    thread_pool: ThreadPool,
+}
 
 #[tonic::async_trait]
 impl EmbeddingGenerator for EmbeddingGeneratorStruct {
     async fn get_embedding(&self, request: Request<EmbeddingRequest>) -> Result<Response<EmbeddingReply>, Status> {
-        TEXT_EMBEDDING_CELL.with(|cell| {
-            let model = cell.get_or_init(|| {
-                let user_def_model = local_model!(UserDefinedEmbeddingModel, "../../../lib/bge_small_en_v15");
-                TextEmbedding::try_new_from_user_defined(user_def_model, Default::default())
-                    .expect_or_pg_err("Couldn't load embedding model")
-            });
+        let model = TEXT_EMBEDDING.get_or_init(|| {
+            let user_def_model = local_model!(UserDefinedEmbeddingModel, "../../../lib/bge_small_en_v15");
+            TextEmbedding::try_new_from_user_defined(user_def_model, Default::default())
+                .expect_or_pg_err("Couldn't load embedding model")
+        });
 
-            let text = request.into_inner().text;
-            let embeddings = model
-                .embed(vec![text], None)
-                .expect_or_pg_err("Couldn't generate embeddings");
+        let text = request.into_inner().text;
 
-            let embedding = embeddings.into_iter().next().unwrap_or_pg_err("Empty result vector");
-            let reply = EmbeddingReply { embedding };
-            Ok(Response::new(reply))
-        })
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        self.thread_pool.spawn(|| {
+            tx.send(model.embed(vec![text], None));
+        });
+
+        match rx.await {
+            // the spawned task didn't complete
+            Err(_) => Err(Status::internal("embedding process crashed")),
+            // the spawned embedding task completed with error
+            Ok(Err(embed_error)) => Err(Status::internal(embed_error.to_string())),
+            // the spawned embedding task completed successfully
+            Ok(Ok(embeddings)) => {
+                let embedding = embeddings.into_iter().next().unwrap_or_pg_err("Empty result vector");
+                let reply = EmbeddingReply { embedding };
+                Ok(Response::new(reply))
+            }
+        }
     }
 }
 
@@ -96,30 +112,38 @@ pub extern "C" fn background_main(arg: pg_sys::Datum) {
     log!("{name} started, received PID {pid}");
 
     BackgroundWorker::attach_signal_handlers(SignalWakeFlags::SIGTERM);
+
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .expect_or_pg_err("Couldn't build runtime for server")
-        .block_on(async {
-            let path = format!("{SOCKET_NAME_PREFIX}.{pid}");
-            fs::remove_file(&path).unwrap_or_default(); // it's not an error if the file isn't there
-            let uds = UnixListener::bind(&path).expect_or_pg_err(&format!("Couldn't create socket at {}", &path));
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o777))
-                .expect_or_pg_err(&format!("Couldn't set permissions for {}", &path));
-            log!("{} created socket {}", name, &path);
-            let uds_stream = UnixListenerStream::new(uds);
-            let embedder = EmbeddingGeneratorStruct::default();
+        .block_on(bg_worker_tonic_main(name, pid));
+}
 
-            Server::builder()
-                .add_service(EmbeddingGeneratorServer::new(embedder))
-                .serve_with_incoming_shutdown(uds_stream, async {
-                    while !BackgroundWorker::sigterm_received() {
-                        sleep(Duration::from_secs(1)).await;
-                    }
-                })
-                .await
-                .expect_or_pg_err("Couldn't create server");
-        });
+async fn bg_worker_tonic_main(name: &str, pid: i64) {
+    let path = format!("{SOCKET_NAME_PREFIX}.{pid}");
+    fs::remove_file(&path).unwrap_or_default(); // it's not an error if the file isn't there
+    let uds = UnixListener::bind(&path).expect_or_pg_err(&format!("Couldn't create socket at {}", &path));
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o777))
+        .expect_or_pg_err(&format!("Couldn't set permissions for {}", &path));
+    log!("{} created socket {}", name, &path);
+
+    let uds_stream = UnixListenerStream::new(uds);
+    let embedder = EmbeddingGeneratorStruct {
+        thread_pool: ThreadPoolBuilder::new()
+            .build()
+            .expect_or_pg_err("could not build rayon thread pool"),
+    };
+
+    Server::builder()
+        .add_service(EmbeddingGeneratorServer::new(embedder))
+        .serve_with_incoming_shutdown(uds_stream, async {
+            while !BackgroundWorker::sigterm_received() {
+                sleep(Duration::from_secs(1)).await;
+            }
+        })
+        .await
+        .expect_or_pg_err("Couldn't create server");
 }
 
 #[pg_schema]
