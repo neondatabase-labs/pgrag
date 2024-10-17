@@ -9,13 +9,9 @@ use embeddings::embedding_generator_server::{EmbeddingGenerator, EmbeddingGenera
 use embeddings::{EmbeddingReply, EmbeddingRequest};
 use errors::*;
 use fastembed::{Pooling, QuantizationMode, TextEmbedding, TokenizerFiles, UserDefinedEmbeddingModel};
-use pgrx::bgworkers::*;
-use pgrx::prelude::*;
+use pgrx::{bgworkers::*, prelude::*};
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use std::cell::OnceCell;
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::sync::OnceLock;
+use std::{cell::OnceCell, fs, os::unix::fs::PermissionsExt, sync::OnceLock};
 use tokio::{
     net::UnixListener,
     time::{sleep, Duration},
@@ -83,7 +79,7 @@ impl EmbeddingGenerator for EmbeddingGeneratorStruct {
         });
 
         let (tx, rx) = tokio::sync::oneshot::channel();
-        
+
         self.thread_pool.spawn(|| {
             tx.send(model.embed(vec![text], None)).expect("Channel send failed");
         });
@@ -129,11 +125,20 @@ async fn bg_worker_tonic_main(name: &str, pid: i64) {
         .expect_or_pg_err(&format!("Couldn't set permissions for {}", &path));
     log!("{} created socket {}", name, &path);
 
+    let num_threads = match std::thread::available_parallelism() {
+        Ok(cpu_count) => match cpu_count.get() {
+            1 => 1,
+            cpus => cpus - 1,
+        },
+        Err(_) => 0, // automatic:
+    };
+
     let uds_stream = UnixListenerStream::new(uds);
     let embedder = EmbeddingGeneratorStruct {
         thread_pool: ThreadPoolBuilder::new()
+            .num_threads(num_threads)
             .build()
-            .expect_or_pg_err("could not build rayon thread pool"),
+            .expect_or_pg_err("Couldn't build rayon thread pool"),
     };
 
     Server::builder()
