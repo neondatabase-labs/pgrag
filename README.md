@@ -60,7 +60,7 @@ cd lib/jina_reranker_v1_tiny_en && tar xzf model.onnx.tar.gz && cd ../..
 Then (with up-to-date Rust installed):
 
 ```bash
-cargo install --locked cargo-pgrx@0.12.5
+cargo install --locked cargo-pgrx@0.12.6
 ```
 
 Finally, inside each of the three folders inside `exts`:
@@ -69,27 +69,27 @@ Finally, inside each of the three folders inside `exts`:
 PG_CONFIG=/path/to/pg_config cargo pgrx install --release
 ```
 
+For `rag_bge_small_en_v15` and `rag_jina_reranker_v1_tiny_en`, you'll also need to edit `postgresql.conf` to add `shared_preload_libraries`. Please see the README files in the relevant `exts` subdirectories for instructions.
+
 
 ## ORT and ONNX installation notes
 
-* The `ort` package supplies precompiled binaries for the ONNX runtime. On some platforms, this may give rise to `undefined symbol` errors. In that case, you'll need to compile the ONNX runtime v18 yourself. On Debian, that looks something like this:
+The `ort` package supplies precompiled binaries for the ONNX runtime. On some platforms, this may give rise to `undefined symbol` errors. In that case, you'll need to compile the ONNX runtime v19 yourself. On Debian, that looks something like this:
 
 ```bash
 apt-get update && apt-get install -y build-essential python3 python3-pip
 python3 -m pip install cmake
-wget https://github.com/microsoft/onnxruntime/archive/refs/tags/v1.18.1.tar.gz -O onnxruntime-1.18.1.tar.gz
-tar xzf onnxruntime-1.18.1.tar.gz
-cd onnxruntime-1.18.1
+wget https://github.com/microsoft/onnxruntime/archive/refs/tags/v1.19.2.tar.gz -O onnxruntime.tar.gz
+tar xzf onnxruntime.tar.gz
+cd onnxruntime
 ./build.sh --config Release --parallel --skip_submodule_sync --skip_tests --allow_running_as_root
 ```
 
 And then when it comes to install the embedding/reranking extensions:
 
 ```bash
-ORT_LIB_LOCATION=/path/to/onnxruntime-1.18.1/build/Linux cargo pgrx install --release
+ORT_LIB_LOCATION=/path/to/onnxruntime/build/Linux cargo pgrx install --release
 ```
-
-* The `ort` and `ort-sys` packages are drawn from a local folder using `[patch.crates-io]` in `Cargo.toml` because (as at 2024-09-06) otherwise we can end up with `ort@2.0.0-rc.4` and `ort-sys@2.0.0-rc.5`, and this mismatch ends badly.
 
 
 ## Usage
