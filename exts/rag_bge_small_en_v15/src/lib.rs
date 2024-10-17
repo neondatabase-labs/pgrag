@@ -75,25 +75,26 @@ pub struct EmbeddingGeneratorStruct {
 #[tonic::async_trait]
 impl EmbeddingGenerator for EmbeddingGeneratorStruct {
     async fn get_embedding(&self, request: Request<EmbeddingRequest>) -> Result<Response<EmbeddingReply>, Status> {
+        let text = request.into_inner().text;
         let model = TEXT_EMBEDDING.get_or_init(|| {
             let user_def_model = local_model!(UserDefinedEmbeddingModel, "../../../lib/bge_small_en_v15");
             TextEmbedding::try_new_from_user_defined(user_def_model, Default::default())
                 .expect_or_pg_err("Couldn't load embedding model")
         });
 
-        let text = request.into_inner().text;
-
         let (tx, rx) = tokio::sync::oneshot::channel();
-
+        
         self.thread_pool.spawn(|| {
-            tx.send(model.embed(vec![text], None));
+            tx.send(model.embed(vec![text], None)).expect("Channel send failed");
         });
 
         match rx.await {
             // the spawned task didn't complete
-            Err(_) => Err(Status::internal("embedding process crashed")),
+            Err(_) => Err(Status::internal("Embedding process crashed")),
+
             // the spawned embedding task completed with error
             Ok(Err(embed_error)) => Err(Status::internal(embed_error.to_string())),
+
             // the spawned embedding task completed successfully
             Ok(Ok(embeddings)) => {
                 let embedding = embeddings.into_iter().next().unwrap_or_pg_err("Empty result vector");
