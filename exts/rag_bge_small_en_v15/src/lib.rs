@@ -3,15 +3,18 @@ mod errors;
 mod embeddings {
     tonic::include_proto!("embeddings");
 }
+#[macro_use]
+mod mconst;
 
-use const_format::formatcp;
-use embeddings::embedding_generator_server::{EmbeddingGenerator, EmbeddingGeneratorServer};
-use embeddings::{EmbeddingReply, EmbeddingRequest};
+use embeddings::{
+    embedding_generator_server::{EmbeddingGenerator, EmbeddingGeneratorServer},
+    EmbeddingReply, EmbeddingRequest,
+};
 use errors::*;
 use fastembed::{Pooling, QuantizationMode, TextEmbedding, TokenizerFiles, UserDefinedEmbeddingModel};
 use pgrx::{bgworkers::*, prelude::*};
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use std::{cell::OnceCell, fs, os::unix::fs::PermissionsExt, sync::OnceLock};
+use std::{fs, os::unix::fs::PermissionsExt, sync::OnceLock};
 use tokio::{
     net::UnixListener,
     time::{sleep, Duration},
@@ -19,50 +22,84 @@ use tokio::{
 use tokio_stream::wrappers::UnixListenerStream;
 use tonic::{transport::Server, Request, Response, Status};
 
-const EXT_NAME: &str = "rag_bge_small_en_v15";
-const SOCKET_NAME_PREFIX: &str = formatcp!("/tmp/.s.pgrag.{EXT_NAME}");
+// macros
+
+mconst!(ext_name, "rag_bge_small_en_v15");
+mconst!(model_path, "../../../lib/bge_small_en_v15/");
+
+macro_rules! socket_path {
+    ($pid:expr) => {
+        format!(concat!("/tmp/.s.pgrag.", ext_name!(), ".{}"), $pid)
+    };
+}
+
+// init
 
 pg_module_magic!();
 
-thread_local! {
-    static PID_CELL: OnceCell<i64> = OnceCell::new();
-}
+static PID: OnceLock<i64> = OnceLock::new();
 static TEXT_EMBEDDING: OnceLock<TextEmbedding> = OnceLock::new();
-
-macro_rules! local_tokenizer_files {
-    ($folder:literal) => {
-        TokenizerFiles {
-            tokenizer_file: include_bytes!(concat!($folder, "/tokenizer.json")).to_vec(),
-            config_file: include_bytes!(concat!($folder, "/config.json")).to_vec(),
-            special_tokens_map_file: include_bytes!(concat!($folder, "/special_tokens_map.json")).to_vec(),
-            tokenizer_config_file: include_bytes!(concat!($folder, "/tokenizer_config.json")).to_vec(),
-        }
-    };
-}
-
-macro_rules! local_model {
-    ($model:ident, $folder:literal) => {
-        $model::new(
-            include_bytes!(concat!($folder, "/model.onnx")).to_vec(),
-            local_tokenizer_files!($folder),
-        )
-        .with_pooling(Pooling::Cls)
-        .with_quantization(QuantizationMode::Static)
-    };
-}
 
 #[pg_guard]
 pub extern "C" fn _PG_init() {
     let pid = std::process::id() as i64;
-    PID_CELL.with(|cell| cell.set(pid).expect_or_pg_err("Couldn't store socket path"));
+    PID.set(pid)
+        .expect_or_pg_err("Impossible concurrent access to set PID value");
 
-    BackgroundWorkerBuilder::new(formatcp!("{EXT_NAME} embeddings background worker"))
-        .set_function(formatcp!("background_main"))
-        .set_library(EXT_NAME)
+    BackgroundWorkerBuilder::new(concat!(ext_name!(), " embeddings background worker"))
+        .set_function("background_main")
+        .set_library(ext_name!())
         .set_argument(pid.into_datum())
         .enable_spi_access()
         .load();
 }
+
+// model loading
+
+macro_rules! local_tokenizer_files {
+    () => {
+        TokenizerFiles {
+            tokenizer_file: include_bytes!(concat!(model_path!(), "tokenizer.json")).to_vec(),
+            config_file: include_bytes!(concat!(model_path!(), "config.json")).to_vec(),
+            special_tokens_map_file: include_bytes!(concat!(model_path!(), "special_tokens_map.json")).to_vec(),
+            tokenizer_config_file: include_bytes!(concat!(model_path!(), "tokenizer_config.json")).to_vec(),
+        }
+    };
+}
+
+#[allow(dead_code)]
+enum OnnxDownloadResult {
+    TransportErr(ureq::Transport),
+    StatusErr(u16),
+    IoErr(std::io::Error),
+    Ok(Vec<u8>),
+}
+
+#[cfg(not(feature = "remote_onnx"))]
+fn get_onnx() -> OnnxDownloadResult {
+    log!("{ERR_PREFIX} Using embedded ONNX model");
+    OnnxDownloadResult::Ok(include_bytes!(concat!(model_path!(), "model.onnx")).to_vec())
+}
+
+#[cfg(feature = "remote_onnx")]
+fn get_onnx() -> OnnxDownloadResult {
+    let url = env!("REMOTE_ONNX_URL");
+    log!("{ERR_PREFIX} Downloading ONNX model {url} ...");
+    let mut bytes: Vec<u8> = Vec::with_capacity(133_093_490);
+    match ureq::get(url).call() {
+        Err(ureq::Error::Transport(err)) => OnnxDownloadResult::TransportErr(err),
+        Err(ureq::Error::Status(status, _)) => OnnxDownloadResult::StatusErr(status),
+        Ok(response) => match response.into_reader().read_to_end(&mut bytes) {
+            Err(read_error) => OnnxDownloadResult::IoErr(read_error),
+            Ok(bytes_read) => {
+                log!("{ERR_PREFIX} ONNX model downloaded ({bytes_read} bytes)");
+                OnnxDownloadResult::Ok(bytes)
+            }
+        },
+    }
+}
+
+// background worker
 
 pub struct EmbeddingGeneratorStruct {
     thread_pool: ThreadPool,
@@ -71,31 +108,49 @@ pub struct EmbeddingGeneratorStruct {
 #[tonic::async_trait]
 impl EmbeddingGenerator for EmbeddingGeneratorStruct {
     async fn get_embedding(&self, request: Request<EmbeddingRequest>) -> Result<Response<EmbeddingReply>, Status> {
-        let text = request.into_inner().text;
-        let model = TEXT_EMBEDDING.get_or_init(|| {
-            let user_def_model = local_model!(UserDefinedEmbeddingModel, "../../../lib/bge_small_en_v15");
-            TextEmbedding::try_new_from_user_defined(user_def_model, Default::default())
-                .expect_or_pg_err("Couldn't load embedding model")
-        });
+        match get_onnx() {
+            OnnxDownloadResult::TransportErr(transport) => {
+                let msg = transport.message().unwrap_or("no further details");
+                Err(Status::internal(format!("Transport error downloading ONNX: {msg}")))
+            }
+            OnnxDownloadResult::StatusErr(status) => {
+                Err(Status::internal(format!("HTTP status {status} downloading ONNX")))
+            }
+            OnnxDownloadResult::IoErr(err) => {
+                let msg = err.to_string();
+                Err(Status::internal(format!("IO error downloading ONNX: {msg}")))
+            }
+            OnnxDownloadResult::Ok(onnx) => {
+                let text = request.into_inner().text;
+                let model = TEXT_EMBEDDING.get_or_init(|| {
+                    let user_def_model = UserDefinedEmbeddingModel::new(onnx, local_tokenizer_files!())
+                        .with_pooling(Pooling::Cls)
+                        .with_quantization(QuantizationMode::Static); // = get_model();
 
-        let (tx, rx) = tokio::sync::oneshot::channel();
+                    TextEmbedding::try_new_from_user_defined(user_def_model, Default::default())
+                        .expect_or_pg_err("Couldn't load embedding model")
+                });
 
-        self.thread_pool.spawn(|| {
-            tx.send(model.embed(vec![text], None)).expect("Channel send failed");
-        });
+                let (tx, rx) = tokio::sync::oneshot::channel();
 
-        match rx.await {
-            // the spawned task didn't complete
-            Err(_) => Err(Status::internal("Embedding process crashed")),
+                self.thread_pool.spawn(|| {
+                    tx.send(model.embed(vec![text], None)).expect("Channel send failed");
+                });
 
-            // the spawned embedding task completed with error
-            Ok(Err(embed_error)) => Err(Status::internal(embed_error.to_string())),
+                match rx.await {
+                    // the spawned task didn't complete
+                    Err(_) => Err(Status::internal("Embedding process crashed")),
 
-            // the spawned embedding task completed successfully
-            Ok(Ok(embeddings)) => {
-                let embedding = embeddings.into_iter().next().unwrap_or_pg_err("Empty result vector");
-                let reply = EmbeddingReply { embedding };
-                Ok(Response::new(reply))
+                    // the spawned embedding task completed with error
+                    Ok(Err(embed_error)) => Err(Status::internal(embed_error.to_string())),
+
+                    // the spawned embedding task completed successfully
+                    Ok(Ok(embeddings)) => {
+                        let embedding = embeddings.into_iter().next().unwrap_or_pg_err("Empty result vector");
+                        let reply = EmbeddingReply { embedding };
+                        Ok(Response::new(reply))
+                    }
+                }
             }
         }
     }
@@ -106,7 +161,7 @@ impl EmbeddingGenerator for EmbeddingGeneratorStruct {
 pub extern "C" fn background_main(arg: pg_sys::Datum) {
     let pid = unsafe { i64::from_polymorphic_datum(arg, false, pg_sys::INT8OID).unwrap_or_pg_err("No PID received") };
     let name = BackgroundWorker::get_name();
-    log!("{name} started, received PID {pid}");
+    log!("{ERR_PREFIX} {name} started, received PID {pid}");
 
     BackgroundWorker::attach_signal_handlers(SignalWakeFlags::SIGTERM);
 
@@ -118,12 +173,12 @@ pub extern "C" fn background_main(arg: pg_sys::Datum) {
 }
 
 async fn bg_worker_tonic_main(name: &str, pid: i64) {
-    let path = format!("{SOCKET_NAME_PREFIX}.{pid}");
+    let path = socket_path!(pid);
     fs::remove_file(&path).unwrap_or_default(); // it's not an error if the file isn't there
     let uds = UnixListener::bind(&path).expect_or_pg_err(&format!("Couldn't create socket at {}", &path));
     fs::set_permissions(&path, fs::Permissions::from_mode(0o777))
         .expect_or_pg_err(&format!("Couldn't set permissions for {}", &path));
-    log!("{} created socket {}", name, &path);
+    log!("{ERR_PREFIX} {} created socket {}", name, &path);
 
     let num_threads = match std::thread::available_parallelism() {
         Ok(cpu_count) => match cpu_count.get() {
@@ -132,14 +187,14 @@ async fn bg_worker_tonic_main(name: &str, pid: i64) {
         },
         Err(_) => 0, // automatic:
     };
-    log!("{} passing {} to num_threads()", name, num_threads);
+    log!("{ERR_PREFIX} {} setting num_threads({})", name, num_threads);
 
     let uds_stream = UnixListenerStream::new(uds);
     let embedder = EmbeddingGeneratorStruct {
         thread_pool: ThreadPoolBuilder::new()
             .num_threads(num_threads)
             .build()
-            .expect_or_pg_err("Couldn't build rayon thread pool"),
+            .expect_or_pg_err("Couldn't build thread pool"),
     };
 
     Server::builder()
@@ -153,9 +208,11 @@ async fn bg_worker_tonic_main(name: &str, pid: i64) {
         .expect_or_pg_err("Couldn't create server");
 }
 
+// extension function(s)
+
 #[pg_schema]
 mod rag_bge_small_en_v15 {
-    use super::{errors::*, PID_CELL, SOCKET_NAME_PREFIX};
+    use super::{errors::*, PID};
     use hyper_util::rt::TokioIo;
     use pgrx::prelude::*;
     use tokio::net::UnixStream;
@@ -179,8 +236,8 @@ mod rag_bge_small_en_v15 {
                 let channel = Endpoint::try_from("http://[::]:80") // URL must be valid but is ignored
                     .expect_or_pg_err("Failed to create endpoint")
                     .connect_with_connector(service_fn(|_: Uri| async {
-                        let pid = PID_CELL.with(|cell| cell.get().unwrap_or_pg_err("Couldn't get socket name").clone());
-                        let path = format!("{SOCKET_NAME_PREFIX}.{pid}").clone();
+                        let pid = PID.get().unwrap_or_pg_err("Couldn't get PID");
+                        let path = socket_path!(pid);
 
                         Ok::<_, std::io::Error>(TokioIo::new(
                             UnixStream::connect(&path)

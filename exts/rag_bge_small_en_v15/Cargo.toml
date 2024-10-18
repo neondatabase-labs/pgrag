@@ -19,6 +19,7 @@ pg15 = ["pgrx/pg15", "pgrx-tests/pg15" ]
 pg16 = ["pgrx/pg16", "pgrx-tests/pg16" ]
 pg17 = ["pgrx/pg17", "pgrx-tests/pg17" ]
 pg_test = []
+remote_onnx = []
 
 [dependencies]
 fastembed = "4.1.0"
@@ -32,8 +33,12 @@ tokio = "1.40.0"
 tokio-stream = "0.1.16"
 tower = "0.5.1"
 hyper-util = "0.1.9"
-const_format = "0.2.33"
 rayon = "1.10.0"
+ureq = { version = "2.10.1", features = ["gzip"] }
+
+[patch.crates-io]
+# ort-sys-2.0.0-rc.6 has some build issues which this snapshot (from main) fixes
+ort-sys = { path = "../../lib/ort-2.0.0-rc.6-87dc4f2/ort-sys" }
 
 [build-dependencies]
 tonic-build = "0.12.3"

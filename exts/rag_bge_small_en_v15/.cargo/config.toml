@@ -1,3 +1,6 @@
 [target.'cfg(target_os="macos")']
 # Postgres symbols won't be available until runtime
 rustflags = ["-Clink-arg=-Wl,-undefined,dynamic_lookup"]
+
+[env]
+REMOTE_ONNX_URL = "https://huggingface.co/Xenova/bge-small-en-v1.5/resolve/main/onnx/model.onnx?download=true"
