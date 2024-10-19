@@ -68,32 +68,31 @@ macro_rules! local_tokenizer_files {
 }
 
 #[allow(dead_code)]
-enum OnnxDownloadResult {
-    TransportErr(ureq::Transport),
-    StatusErr(u16),
-    IoErr(std::io::Error),
-    Ok(Vec<u8>),
+enum OnnxDownloadError {
+    Transport(ureq::Transport),
+    Status(u16),
+    Io(std::io::Error),
 }
 
 #[cfg(not(feature = "remote_onnx"))]
-fn get_onnx() -> OnnxDownloadResult {
+fn get_onnx() -> Result<Vec<u8>, OnnxDownloadError> {
     log!("{ERR_PREFIX} Using embedded ONNX model");
-    OnnxDownloadResult::Ok(include_bytes!(concat!(model_path!(), "model.onnx")).to_vec())
+    Ok(include_bytes!(concat!(model_path!(), "model.onnx")).to_vec())
 }
 
 #[cfg(feature = "remote_onnx")]
-fn get_onnx() -> OnnxDownloadResult {
+fn get_onnx() -> Result<Vec<u8>, OnnxDownloadError> {
     let url = env!("REMOTE_ONNX_URL");
     log!("{ERR_PREFIX} Downloading ONNX model {url} ...");
     let mut bytes: Vec<u8> = Vec::with_capacity(133_093_490);
     match ureq::get(url).call() {
-        Err(ureq::Error::Transport(err)) => OnnxDownloadResult::TransportErr(err),
-        Err(ureq::Error::Status(status, _)) => OnnxDownloadResult::StatusErr(status),
+        Err(ureq::Error::Transport(transport)) => Err(OnnxDownloadError::Transport(transport)),
+        Err(ureq::Error::Status(status, _)) => Err(OnnxDownloadError::Status(status)),
         Ok(response) => match response.into_reader().read_to_end(&mut bytes) {
-            Err(read_error) => OnnxDownloadResult::IoErr(read_error),
+            Err(read_error) => Err(OnnxDownloadError::Io(read_error)),
             Ok(bytes_read) => {
                 log!("{ERR_PREFIX} ONNX model downloaded ({bytes_read} bytes)");
-                OnnxDownloadResult::Ok(bytes)
+                Ok(bytes)
             }
         },
     }
@@ -105,52 +104,75 @@ pub struct EmbeddingGeneratorStruct {
     thread_pool: ThreadPool,
 }
 
+fn get_panic_message(panic: &Box<dyn std::any::Any + Send>) -> Option<&str> {
+    panic
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| panic.downcast_ref::<&'static str>().map(std::ops::Deref::deref))
+}
+
 #[tonic::async_trait]
 impl EmbeddingGenerator for EmbeddingGeneratorStruct {
     async fn get_embedding(&self, request: Request<EmbeddingRequest>) -> Result<Response<EmbeddingReply>, Status> {
-        match get_onnx() {
-            OnnxDownloadResult::TransportErr(transport) => {
-                let msg = transport.message().unwrap_or("no further details");
-                Err(Status::internal(format!("Transport error downloading ONNX: {msg}")))
-            }
-            OnnxDownloadResult::StatusErr(status) => {
-                Err(Status::internal(format!("HTTP status {status} downloading ONNX")))
-            }
-            OnnxDownloadResult::IoErr(err) => {
-                let msg = err.to_string();
-                Err(Status::internal(format!("IO error downloading ONNX: {msg}")))
-            }
-            OnnxDownloadResult::Ok(onnx) => {
-                let text = request.into_inner().text;
-                let model = TEXT_EMBEDDING.get_or_init(|| {
-                    let user_def_model = UserDefinedEmbeddingModel::new(onnx, local_tokenizer_files!())
-                        .with_pooling(Pooling::Cls)
-                        .with_quantization(QuantizationMode::Static); // = get_model();
+        let text = request.into_inner().text;
 
-                    TextEmbedding::try_new_from_user_defined(user_def_model, Default::default())
-                        .expect_or_pg_err("Couldn't load embedding model")
-                });
+        // note: using panic!() and catching it is frowned on as a form of ordinary error handling,
+        // but we need to ensure that the .get_or_init() only initialize TEXT_EMBEDDING with a TextEmbedding,
+        // otherwise transient network errors become permanent
 
-                let (tx, rx) = tokio::sync::oneshot::channel();
-
-                self.thread_pool.spawn(|| {
-                    tx.send(model.embed(vec![text], None)).expect("Channel send failed");
-                });
-
-                match rx.await {
-                    // the spawned task didn't complete
-                    Err(_) => Err(Status::internal("Embedding process crashed")),
-
-                    // the spawned embedding task completed with error
-                    Ok(Err(embed_error)) => Err(Status::internal(embed_error.to_string())),
-
-                    // the spawned embedding task completed successfully
-                    Ok(Ok(embeddings)) => {
-                        let embedding = embeddings.into_iter().next().unwrap_or_pg_err("Empty result vector");
-                        let reply = EmbeddingReply { embedding };
-                        Ok(Response::new(reply))
+        let model: &TextEmbedding = match std::panic::catch_unwind(|| {
+            TEXT_EMBEDDING.get_or_init(|| {
+                let onnx = match get_onnx() {
+                    Err(OnnxDownloadError::Transport(transport)) => {
+                        let msg = transport.to_string();
+                        panic!("Transport error downloading ONNX: {}", msg);
                     }
+                    Err(OnnxDownloadError::Status(status)) => {
+                        panic!("HTTP status {status} downloading ONNX");
+                    }
+                    Err(OnnxDownloadError::Io(err)) => {
+                        let msg = err.to_string();
+                        panic!("IO error downloading ONNX: {msg}");
+                    }
+                    Ok(onnx) => onnx,
+                };
+
+                let user_def_model = UserDefinedEmbeddingModel::new(onnx, local_tokenizer_files!())
+                    .with_pooling(Pooling::Cls)
+                    .with_quantization(QuantizationMode::Static);
+
+                match TextEmbedding::try_new_from_user_defined(user_def_model, Default::default()) {
+                    Err(err) => panic!("Couldn't create embedding model from downloaded file: {}", err),
+                    Ok(model) => model,
                 }
+            })
+        }) {
+            Err(cause) => {
+                let msg = get_panic_message(&cause).unwrap_or("Unknown error while loading embedding model");
+                return Err(Status::internal(msg));
+            }
+            Ok(result) => result,
+        };
+
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        self.thread_pool.spawn(|| {
+            let embeddings = model.embed(vec![text], None);
+            tx.send(embeddings).expect("Channel send failed");
+        });
+
+        match rx.await {
+            // the spawned task didn't complete
+            Err(_) => Err(Status::internal("Embedding process crashed")),
+
+            // the spawned embedding task completed with error
+            Ok(Err(embed_error)) => Err(Status::internal(embed_error.to_string())),
+
+            // the spawned embedding task completed successfully
+            Ok(Ok(embeddings)) => {
+                let embedding = embeddings.into_iter().next().unwrap_or_pg_err("Empty result vector");
+                let reply = EmbeddingReply { embedding };
+                Ok(Response::new(reply))
             }
         }
     }

@@ -34,7 +34,7 @@ tokio-stream = "0.1.16"
 tower = "0.5.1"
 hyper-util = "0.1.9"
 rayon = "1.10.0"
-ureq = { version = "2.10.1", features = ["gzip"] }
+ureq = "2.10.1"
 
 [patch.crates-io]
 # ort-sys-2.0.0-rc.6 has some build issues which this snapshot (from main) fixes
