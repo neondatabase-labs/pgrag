@@ -4,7 +4,7 @@ mod embeddings {
     tonic::include_proto!("embeddings");
 }
 #[macro_use]
-mod mconst;
+mod util;
 
 use embeddings::{
     embedding_generator_server::{EmbeddingGenerator, EmbeddingGeneratorServer},
@@ -67,34 +67,25 @@ macro_rules! local_tokenizer_files {
     };
 }
 
-#[allow(dead_code)]
-enum OnnxDownloadError {
-    Transport(ureq::Transport),
-    Status(u16),
-    Io(std::io::Error),
-}
-
 #[cfg(not(feature = "remote_onnx"))]
-fn get_onnx() -> Result<Vec<u8>, OnnxDownloadError> {
-    log!("{ERR_PREFIX} Using embedded ONNX model");
-    Ok(include_bytes!(concat!(model_path!(), "model.onnx")).to_vec())
+fn get_onnx() -> Vec<u8> {
+    include_bytes!(concat!(model_path!(), "model.onnx")).to_vec()
 }
 
 #[cfg(feature = "remote_onnx")]
-fn get_onnx() -> Result<Vec<u8>, OnnxDownloadError> {
+fn get_onnx() -> Vec<u8> {
     let url = env!("REMOTE_ONNX_URL");
-    log!("{ERR_PREFIX} Downloading ONNX model {url} ...");
     let mut bytes: Vec<u8> = Vec::with_capacity(133_093_490);
     match ureq::get(url).call() {
-        Err(ureq::Error::Transport(transport)) => Err(OnnxDownloadError::Transport(transport)),
-        Err(ureq::Error::Status(status, _)) => Err(OnnxDownloadError::Status(status)),
-        Ok(response) => match response.into_reader().read_to_end(&mut bytes) {
-            Err(read_error) => Err(OnnxDownloadError::Io(read_error)),
-            Ok(bytes_read) => {
-                log!("{ERR_PREFIX} ONNX model downloaded ({bytes_read} bytes)");
-                Ok(bytes)
-            }
-        },
+        Err(ureq::Error::Transport(transport)) => panic!("Transport error downloading ONNX: {}", transport.to_string()),
+        Err(ureq::Error::Status(status, _)) => panic!("Received HTTP status {} downloading ONNX", status),
+        Ok(response) => {
+            response
+                .into_reader()
+                .read_to_end(&mut bytes)
+                .expect("IO error downloading ONNX");
+            bytes
+        }
     }
 }
 
@@ -104,58 +95,33 @@ pub struct EmbeddingGeneratorStruct {
     thread_pool: ThreadPool,
 }
 
-fn get_panic_message(panic: &Box<dyn std::any::Any + Send>) -> Option<&str> {
-    panic
-        .downcast_ref::<String>()
-        .map(String::as_str)
-        .or_else(|| panic.downcast_ref::<&'static str>().map(std::ops::Deref::deref))
-}
-
 #[tonic::async_trait]
 impl EmbeddingGenerator for EmbeddingGeneratorStruct {
     async fn get_embedding(&self, request: Request<EmbeddingRequest>) -> Result<Response<EmbeddingReply>, Status> {
         let text = request.into_inner().text;
-
-        // note: using panic!() and catching it is frowned on as a form of ordinary error handling,
-        // but we need to ensure that the .get_or_init() only initialize TEXT_EMBEDDING with a TextEmbedding,
-        // otherwise transient network errors become permanent
-
         let model: &TextEmbedding = match std::panic::catch_unwind(|| {
-            TEXT_EMBEDDING.get_or_init(|| {
-                let onnx = match get_onnx() {
-                    Err(OnnxDownloadError::Transport(transport)) => {
-                        let msg = transport.to_string();
-                        panic!("Transport error downloading ONNX: {}", msg);
-                    }
-                    Err(OnnxDownloadError::Status(status)) => {
-                        panic!("HTTP status {status} downloading ONNX");
-                    }
-                    Err(OnnxDownloadError::Io(err)) => {
-                        let msg = err.to_string();
-                        panic!("IO error downloading ONNX: {msg}");
-                    }
-                    Ok(onnx) => onnx,
-                };
+            // note: using panic!() and catching it is frowned on as a form of ordinary error handling,
+            // but we need to ensure that the .get_or_init() only initializes TEXT_EMBEDDING with a
+            // successfully-created TextEmbedding, otherwise transient network errors become permanent
 
+            TEXT_EMBEDDING.get_or_init(|| {
+                let onnx = get_onnx(); // can panic if remote_onnx is enabled
                 let user_def_model = UserDefinedEmbeddingModel::new(onnx, local_tokenizer_files!())
                     .with_pooling(Pooling::Cls)
                     .with_quantization(QuantizationMode::Static);
 
-                match TextEmbedding::try_new_from_user_defined(user_def_model, Default::default()) {
-                    Err(err) => panic!("Couldn't create embedding model from downloaded file: {}", err),
-                    Ok(model) => model,
-                }
+                TextEmbedding::try_new_from_user_defined(user_def_model, Default::default())
+                    .expect("Couldn't create embedding model")
             })
         }) {
             Err(cause) => {
-                let msg = get_panic_message(&cause).unwrap_or("Unknown error while loading embedding model");
+                let msg = util::retrieve_panic_message(&cause).unwrap_or("Unknown error loading embedding model");
                 return Err(Status::internal(msg));
             }
             Ok(result) => result,
         };
 
         let (tx, rx) = tokio::sync::oneshot::channel();
-
         self.thread_pool.spawn(|| {
             let embeddings = model.embed(vec![text], None);
             tx.send(embeddings).expect("Channel send failed");
@@ -186,48 +152,47 @@ pub extern "C" fn background_main(arg: pg_sys::Datum) {
     log!("{ERR_PREFIX} {name} started, received PID {pid}");
 
     BackgroundWorker::attach_signal_handlers(SignalWakeFlags::SIGTERM);
-
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .expect_or_pg_err("Couldn't build runtime for server")
-        .block_on(bg_worker_tonic_main(name, pid));
-}
+        .block_on(async {
+            let path = socket_path!(pid);
+            fs::remove_file(&path).unwrap_or_default(); // it's not an error if the file isn't there
+            let uds = UnixListener::bind(&path).expect_or_pg_err(&format!("Couldn't create socket at {}", &path));
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o777))
+                .expect_or_pg_err(&format!("Couldn't set permissions for {}", &path));
+            log!("{ERR_PREFIX} {} created socket {}", name, &path);
 
-async fn bg_worker_tonic_main(name: &str, pid: i64) {
-    let path = socket_path!(pid);
-    fs::remove_file(&path).unwrap_or_default(); // it's not an error if the file isn't there
-    let uds = UnixListener::bind(&path).expect_or_pg_err(&format!("Couldn't create socket at {}", &path));
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o777))
-        .expect_or_pg_err(&format!("Couldn't set permissions for {}", &path));
-    log!("{ERR_PREFIX} {} created socket {}", name, &path);
+            let num_threads = match std::thread::available_parallelism() {
+                // Ok(cpu_count) => match cpu_count.get() {
+                //     1 => 1,
+                //     cpus => cpus - 1,
+                // },
+                Ok(cpu_count) => (cpu_count.get() as f32 * 0.5).ceil() as usize,
+                Err(_) => 0, // automatic:
+            };
+            log!("{ERR_PREFIX} {} setting num_threads({})", name, num_threads);
 
-    let num_threads = match std::thread::available_parallelism() {
-        Ok(cpu_count) => match cpu_count.get() {
-            1 => 1,
-            cpus => cpus - 1,
-        },
-        Err(_) => 0, // automatic:
-    };
-    log!("{ERR_PREFIX} {} setting num_threads({})", name, num_threads);
+            let embedder = EmbeddingGeneratorStruct {
+                thread_pool: ThreadPoolBuilder::new()
+                    .num_threads(num_threads)
+                    .build()
+                    .expect_or_pg_err("Couldn't build thread pool"),
+            };
 
-    let uds_stream = UnixListenerStream::new(uds);
-    let embedder = EmbeddingGeneratorStruct {
-        thread_pool: ThreadPoolBuilder::new()
-            .num_threads(num_threads)
-            .build()
-            .expect_or_pg_err("Couldn't build thread pool"),
-    };
+            let uds_stream = UnixListenerStream::new(uds);
 
-    Server::builder()
-        .add_service(EmbeddingGeneratorServer::new(embedder))
-        .serve_with_incoming_shutdown(uds_stream, async {
-            while !BackgroundWorker::sigterm_received() {
-                sleep(Duration::from_secs(1)).await;
-            }
-        })
-        .await
-        .expect_or_pg_err("Couldn't create server");
+            Server::builder()
+                .add_service(EmbeddingGeneratorServer::new(embedder))
+                .serve_with_incoming_shutdown(uds_stream, async {
+                    while !BackgroundWorker::sigterm_received() {
+                        sleep(Duration::from_millis(500)).await;
+                    }
+                })
+                .await
+                .expect_or_pg_err("Couldn't create server");
+        });
 }
 
 // extension function(s)
@@ -260,7 +225,6 @@ mod rag_bge_small_en_v15 {
                     .connect_with_connector(service_fn(|_: Uri| async {
                         let pid = PID.get().unwrap_or_pg_err("Couldn't get PID");
                         let path = socket_path!(pid);
-
                         Ok::<_, std::io::Error>(TokioIo::new(
                             UnixStream::connect(&path)
                                 .await
