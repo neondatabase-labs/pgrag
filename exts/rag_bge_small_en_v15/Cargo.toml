@@ -22,7 +22,7 @@ pg_test = []
 remote_onnx = []
 
 [dependencies]
-fastembed = "4.1.0"
+fastembed = "=4.1.0"
 tokenizers = "0.19.1"
 text-splitter = { version = "0.14.1", features = ["tokenizers"] }
 serde_json = "1.0.120"
@@ -37,8 +37,10 @@ rayon = "1.10.0"
 ureq = "2.10.1"
 
 [patch.crates-io]
-# ort-sys-2.0.0-rc.6 has some build issues which this snapshot (from main) fixes
-ort-sys = { path = "../../lib/ort-2.0.0-rc.6-87dc4f2/ort-sys" }
+# ort-sys-2.0.0-rc.8 has some build issues for which fixes are not yet released
+# so these are snapshots from `main` which lie about their versions
+ort = { path = "../../lib/ort-2.0.0-d7b5b17-patched" }
+ort-sys = { path = "../../lib/ort-2.0.0-d7b5b17-patched/ort-sys" }
 
 [build-dependencies]
 tonic-build = "0.12.3"
