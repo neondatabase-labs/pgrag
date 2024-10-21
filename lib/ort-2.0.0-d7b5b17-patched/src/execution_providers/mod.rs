@@ -180,30 +180,30 @@ impl ExecutionProviderOptions {
 			.insert(CString::new(key).expect("unexpected nul in key string"), CString::new(value).expect("unexpected nul in value string"));
 	}
 
-	pub fn to_ffi(&self) -> ExecutionProviderOptionsFFI {
-		let (key_ptrs, value_ptrs) = self.0.iter().map(|(k, v)| (k.as_ptr(), v.as_ptr())).unzip();
-		ExecutionProviderOptionsFFI { key_ptrs, value_ptrs }
-	}
+	// pub fn to_ffi(&self) -> ExecutionProviderOptionsFFI {
+	// 	let (key_ptrs, value_ptrs) = self.0.iter().map(|(k, v)| (k.as_ptr(), v.as_ptr())).unzip();
+	// 	ExecutionProviderOptionsFFI { key_ptrs, value_ptrs }
+	// }
 }
 
-pub(crate) struct ExecutionProviderOptionsFFI {
-	key_ptrs: Vec<*const c_char>,
-	value_ptrs: Vec<*const c_char>
-}
+// pub(crate) struct ExecutionProviderOptionsFFI {
+// 	key_ptrs: Vec<*const c_char>,
+// 	value_ptrs: Vec<*const c_char>
+// }
 
-impl ExecutionProviderOptionsFFI {
-	pub fn key_ptrs(&self) -> *const *const c_char {
-		self.key_ptrs.as_ptr()
-	}
+// impl ExecutionProviderOptionsFFI {
+// 	pub fn key_ptrs(&self) -> *const *const c_char {
+// 		self.key_ptrs.as_ptr()
+// 	}
 
-	pub fn value_ptrs(&self) -> *const *const c_char {
-		self.value_ptrs.as_ptr()
-	}
+// 	pub fn value_ptrs(&self) -> *const *const c_char {
+// 		self.value_ptrs.as_ptr()
+// 	}
 
-	pub fn len(&self) -> usize {
-		self.key_ptrs.len()
-	}
-}
+// 	pub fn len(&self) -> usize {
+// 		self.key_ptrs.len()
+// 	}
+// }
 
 #[allow(unused)]
 macro_rules! get_ep_register {

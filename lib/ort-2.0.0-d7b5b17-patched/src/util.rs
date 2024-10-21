@@ -1,5 +1,6 @@
 #[cfg(not(target_family = "windows"))]
 use std::os::raw::c_char;
+#[allow(unused_imports)]
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 #[cfg(target_family = "windows")]

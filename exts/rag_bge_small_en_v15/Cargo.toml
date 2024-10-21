@@ -34,7 +34,7 @@ tokio-stream = "0.1.16"
 tower = "0.5.1"
 hyper-util = "0.1.9"
 rayon = "1.10.0"
-ureq = "2.10.1"
+reqwest = "0.12.8"
 
 [patch.crates-io]
 # ort-sys-2.0.0-rc.8 has some build issues for which fixes are not yet released
