@@ -69,12 +69,14 @@ Finally, inside each of the three folders inside `exts`:
 PG_CONFIG=/path/to/pg_config cargo pgrx install --release
 ```
 
+The extension has been tested on Linux and macOS. It does not currently support Windows.
+
 
 ### Embedding and reranking extensions
 
 #### Background worker process
 
-To avoid requiring excessive memory when reranking or generating embeddings in multiple Postgres processes, these tasks are done by a multi-threaded background worker.
+To avoid requiring excessive memory when reranking or generating embeddings in multiple Postgres processes, each of these tasks is done by a multi-threaded background worker (the worker is started when Postgres starts, but the models are lazy-loaded on first use).
 
 For `rag_bge_small_en_v15` and `rag_jina_reranker_v1_tiny_en`, you'll therefore need to edit `postgresql.conf` to add a `shared_preload_libraries` configuration:
 
@@ -82,17 +84,17 @@ For `rag_bge_small_en_v15` and `rag_jina_reranker_v1_tiny_en`, you'll therefore 
 shared_preload_libraries = 'rag_bge_small_en_v15.so,rag_jina_reranker_v1_tiny_en.so'
 ```
 
-On macOS, replace `.so` with `.dylib` here.
+On macOS, replace `.so` with `.dylib` in these library names.
 
-When using `cargo pgrx run` with Postgres instances installed by pgrx, the `postgresql.conf` file is located in `~/.pgrx/data-N` (where N is the relevant Postgres version).
+When using `cargo pgrx run` with Postgres instances installed by pgrx, `postgresql.conf` is located in `~/.pgrx/data-N` (where N is the relevant Postgres version).
 
-When using `cargo pgrx test`, the `postgresql.conf` file is inside the `target` directory of your extension, e.g. `~/path/to/myext/target/test-pgdata/N` (where N is the relevant Postgres version).
+When using `cargo pgrx test`, `postgresql.conf` is inside the `target` directory of your extension, e.g. `~/path/to/myext/target/test-pgdata/N` (where N is the relevant Postgres version).
 
 #### ORT and ONNX installation
 
 The `ort` and `ort-sys` crates are currently supplied in patched form in `vendor` while awaiting a `2.0.0-rc.9` release that [fixes a build issue](https://github.com/pykeio/ort/issues/305).
 
-The `ort` package supplies precompiled binaries for the ONNX runtime (currently v1.19). On some platforms, this may give rise to `undefined symbol` errors. In that case, you'll need to compile the ONNX runtime yourself and provide the build location to `cargo pgrx install` in an `ORT_LIB_LOCATION` environment variable. An example for Ubuntu 24.04 is provided in [COMPILE.sh](COMPILE.sh).
+The `ort` package supplies precompiled binaries for the ONNX runtime (currently v1.19). On some platforms, this may give rise to `undefined symbol` errors. In that case, you'll need to compile the ONNX runtime yourself and provide the build location to `cargo pgrx install` in the `ORT_LIB_LOCATION` environment variable. An example for Ubuntu 24.04 is provided in [COMPILE.sh](COMPILE.sh).
 
 #### Remote ONNX model file
 
@@ -101,6 +103,8 @@ By default, the embedding and reranking models are embedded within the extension
 ```bash
 REMOTE_ONNX_URL=http://example.com/path/model.onnx cargo pgrx install --release --features remote_onnx
 ```
+
+`REMOTE_ONNX_URL` defaults to a HuggingFace URL, but it is recommended to change this to a location you control.
 
 
 ## Usage
