@@ -25,8 +25,10 @@ fastembed = "3.10.0"
 pgrx = "0.12.5"
 
 [patch.crates-io]
-ort = { path = "../../lib/ort-2.0.0-rc.4" }
-ort-sys = { path = "../../lib/ort-2.0.0-rc.4/ort-sys" }
+# ort-sys-2.0.0-rc.8 has some build issues for which fixes are not yet released
+# so these are snapshots from `main` which lie about their versions
+ort = { path = "../../lib/ort-2.0.0-d7b5b17-patched" }
+ort-sys = { path = "../../lib/ort-2.0.0-d7b5b17-patched/ort-sys" }
 
 [dev-dependencies]
 pgrx-tests = "0.12.5"
