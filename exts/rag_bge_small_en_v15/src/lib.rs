@@ -155,7 +155,7 @@ pub extern "C" fn background_main(arg: pg_sys::Datum) {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .expect_or_pg_err("Couldn't build runtime for server")
+        .expect_or_pg_err("Couldn't build tokio runtime for server")
         .block_on(async {
             let path = socket_path!(pid);
             fs::remove_file(&path).unwrap_or_default(); // it's not an error if the file isn't there
