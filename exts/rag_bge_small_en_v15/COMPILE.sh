@@ -33,7 +33,6 @@ cd onnxruntime-1.19.2
 # pgrag
 git clone https://github.com/neondatabase/pgrag.git
 cd pgrag
-git checkout backgroundworker
 cd lib/bge_small_en_v15 && tar xzf model.onnx.tar.gz && cd ../..
 cd lib/jina_reranker_v1_tiny_en && tar xzf model.onnx.tar.gz && cd ../..
 cd exts/rag
