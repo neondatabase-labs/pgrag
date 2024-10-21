@@ -25,8 +25,8 @@ make install
 cd ..
 
 # ONNX
-wget https://github.com/microsoft/onnxruntime/archive/refs/tags/v1.19.2.tar.gz -O onnxruntime.tar.gz
-tar xzf onnxruntime.tar.gz
+wget https://github.com/microsoft/onnxruntime/archive/refs/tags/v1.19.2.tar.gz -O onnxruntime-1.19.2.tar.gz
+tar xzf onnxruntime-1.19.2.tar.gz
 cd onnxruntime-1.19.2
 ./build.sh --config Release --parallel --skip_submodule_sync --skip_tests --allow_running_as_root
 

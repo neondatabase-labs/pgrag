@@ -47,7 +47,7 @@ tar xzf pgvector-0.7.4.tar.gz
 cd pgvector-0.7.4
 export PG_CONFIG=/path/to/pg_config  # not just a path: should actually end with `pg_config`
 make
-make install
+make install  # may need sudo
 ```
 
 Next, download the extensions source, and (if you are building the embedding or reranking extensions) extract the relevant model files:
@@ -69,26 +69,34 @@ Finally, inside each of the three folders inside `exts`:
 PG_CONFIG=/path/to/pg_config cargo pgrx install --release
 ```
 
-For `rag_bge_small_en_v15` and `rag_jina_reranker_v1_tiny_en`, you'll also need to edit `postgresql.conf` to add `shared_preload_libraries`. Please see the README files in the relevant `exts` subdirectories for instructions.
+## Embedding and reranking extensions
 
+### Background worker process
 
-## ORT and ONNX installation notes
+To avoid requiring excessive memory when reranking or generating embeddings in multiple Postgres processes, these tasks are done by a multi-threaded background worker.
 
-The `ort` package supplies precompiled binaries for the ONNX runtime. On some platforms, this may give rise to `undefined symbol` errors. In that case, you'll need to compile the ONNX runtime v19 yourself. On Debian, that looks something like this:
+For `rag_bge_small_en_v15` and `rag_jina_reranker_v1_tiny_en`, you'll therefore need to edit `postgresql.conf` to add a `shared_preload_libraries` configuration:
 
-```bash
-apt-get update && apt-get install -y build-essential python3 python3-pip
-python3 -m pip install cmake
-wget https://github.com/microsoft/onnxruntime/archive/refs/tags/v1.19.2.tar.gz -O onnxruntime.tar.gz
-tar xzf onnxruntime.tar.gz
-cd onnxruntime
-./build.sh --config Release --parallel --skip_submodule_sync --skip_tests --allow_running_as_root
+```
+shared_preload_libraries = 'rag_bge_small_en_v15.so'
 ```
 
-And then when it comes to install the embedding/reranking extensions:
+On macOS, replace `.so` with `.dylib` here.
+
+When using `cargo pgrx run` with Postgres instances installed by pgrx, the `postgresql.conf` file is located in `~/.pgrx/data-N` (where N is the relevant Postgres version).
+
+When using `cargo pgrx test`, the `postgresql.conf` file is inside the `target` directory of your extension, e.g. `~/path/to/myext/target/test-pgdata/N` (where N is the relevant Postgres version).
+
+### ORT and ONNX installation
+
+The `ort` package supplies precompiled binaries for the ONNX runtime (currently v1.19). On some platforms, this may give rise to `undefined symbol` errors. In that case, you'll need to compile the ONNX runtime yourself and provide the build location to `cargo pgrx install` in an `ORT_LIB_LOCATION` environment variable. An example for Ubuntu 24.04 is provided in [COMPILE.sh](COMPILE.sh).
+
+### Remote ONNX model file
+
+By default, the embedding and reranking models are embedded within the extension (using Rust's `include_bytes!()` macro). But it's also possible to have these `.onnx` files downloaded on first use. This is enabled by the `remote_onnx` crate feature, and the download URL is specified via the `REMOTE_ONNX_URL` build-time environment variable. For example:
 
 ```bash
-ORT_LIB_LOCATION=/path/to/onnxruntime/build/Linux cargo pgrx install --release
+REMOTE_ONNX_URL=http://example.com/path/model.onnx cargo pgrx install --release --features remote_onnx
 ```
 
 
