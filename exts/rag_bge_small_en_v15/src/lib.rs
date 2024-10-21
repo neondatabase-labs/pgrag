@@ -165,12 +165,11 @@ pub extern "C" fn background_main(arg: pg_sys::Datum) {
             log!("{ERR_PREFIX} {} created socket {}", name, &path);
 
             let num_threads = match std::thread::available_parallelism() {
-                // Ok(cpu_count) => match cpu_count.get() {
-                //     1 => 1,
-                //     cpus => cpus - 1,
-                // },
-                Ok(cpu_count) => (cpu_count.get() as f32 * 0.5).ceil() as usize,
-                Err(_) => 0, // automatic:
+                Err(_) => 0, // automatic
+                Ok(cpu_count) => match cpu_count.get() {
+                    1 => 1,
+                    cpus => cpus - 1,
+                },
             };
             log!("{ERR_PREFIX} {} setting num_threads({})", name, num_threads);
 
