@@ -92,7 +92,7 @@ impl EmbeddingGenerator for EmbeddingGeneratorStruct {
         let text = request.into_inner().text;
         let model = match TEXT_EMBEDDING
             .get_or_try_init(|| async {
-                let onnx = get_onnx().await?; // can panic if remote_onnx is enabled
+                let onnx = get_onnx().await?;
                 let user_def_model = UserDefinedEmbeddingModel::new(onnx, local_tokenizer_files!())
                     .with_pooling(Pooling::Cls)
                     .with_quantization(QuantizationMode::Static);
@@ -175,6 +175,10 @@ pub extern "C" fn background_main(arg: pg_sys::Datum) {
 
 #[pg_schema]
 mod rag_bge_small_en_v15 {
+    pub mod embeddings {
+        tonic::include_proto!("embeddings");
+    }
+
     use super::{errors::*, PID};
     use hyper_util::rt::TokioIo;
     use pgrx::prelude::*;
@@ -184,10 +188,6 @@ mod rag_bge_small_en_v15 {
 
     use embeddings::embedding_generator_client::EmbeddingGeneratorClient;
     use embeddings::EmbeddingRequest;
-
-    pub mod embeddings {
-        tonic::include_proto!("embeddings");
-    }
 
     #[pg_extern(immutable, strict)]
     pub fn _embedding(text: &str) -> Vec<f32> {
@@ -204,18 +204,18 @@ mod rag_bge_small_en_v15 {
                         Ok::<_, std::io::Error>(TokioIo::new(
                             UnixStream::connect(&path)
                                 .await
-                                .expect_or_pg_err(&format!("Couldn't connect embedding worker stream {}", &path)),
+                                .expect_or_pg_err(&format!("Couldn't connect worker stream {}", &path)),
                         ))
                     }))
                     .await
-                    .expect_or_pg_err("Couldn't connect embedding worker channel");
+                    .expect_or_pg_err("Couldn't connect worker channel");
 
                 let mut client = EmbeddingGeneratorClient::new(channel);
                 let request = tonic::Request::new(EmbeddingRequest { text: text.to_string() });
                 let response = client
                     .get_embedding(request)
                     .await
-                    .expect_or_pg_err("Couldn't get response from embedding worker");
+                    .expect_or_pg_err("Couldn't get response from worker");
 
                 response.into_inner().embedding
             })

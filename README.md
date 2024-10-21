@@ -79,7 +79,7 @@ To avoid requiring excessive memory when reranking or generating embeddings in m
 For `rag_bge_small_en_v15` and `rag_jina_reranker_v1_tiny_en`, you'll therefore need to edit `postgresql.conf` to add a `shared_preload_libraries` configuration:
 
 ```
-shared_preload_libraries = 'rag_bge_small_en_v15.so'
+shared_preload_libraries = 'rag_bge_small_en_v15.so,rag_jina_reranker_v1_tiny_en.so'
 ```
 
 On macOS, replace `.so` with `.dylib` here.

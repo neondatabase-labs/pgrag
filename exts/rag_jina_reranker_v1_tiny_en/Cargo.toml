@@ -19,10 +19,19 @@ pg15 = ["pgrx/pg15", "pgrx-tests/pg15" ]
 pg16 = ["pgrx/pg16", "pgrx-tests/pg16" ]
 pg17 = ["pgrx/pg17", "pgrx-tests/pg17" ]
 pg_test = []
+remote_onnx = []
 
 [dependencies]
-fastembed = "3.10.0"
-pgrx = "0.12.5"
+fastembed = "=4.1.0"
+pgrx = "0.12.6"
+tonic = "0.12.3"
+prost = "0.13.3"
+tokio = "1.40.0"
+tokio-stream = "0.1.16"
+tower = "0.5.1"
+hyper-util = "0.1.9"
+rayon = "1.10.0"
+reqwest = "0.12.8"
 
 [patch.crates-io]
 # ort-sys-2.0.0-rc.8 has some build issues for which fixes are not yet released
@@ -30,8 +39,11 @@ pgrx = "0.12.5"
 ort = { path = "../../lib/ort-2.0.0-d7b5b17-patched" }
 ort-sys = { path = "../../lib/ort-2.0.0-d7b5b17-patched/ort-sys" }
 
+[build-dependencies]
+tonic-build = "0.12.3"
+
 [dev-dependencies]
-pgrx-tests = "0.12.5"
+pgrx-tests = "0.12.6"
 
 [profile.dev]
 panic = "unwind"

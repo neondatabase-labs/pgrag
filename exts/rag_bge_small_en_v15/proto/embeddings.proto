@@ -6,7 +6,7 @@ service EmbeddingGenerator {
 }
 
 message EmbeddingRequest {
-   string text = 1;
+    string text = 1;
 }
 
 message EmbeddingReply {

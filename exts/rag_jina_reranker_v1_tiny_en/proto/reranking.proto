@@ -1,0 +1,15 @@
+syntax = "proto3";
+package reranking;
+
+service Reranker {
+    rpc Rerank (RerankingRequest) returns (RerankingReply);
+}
+
+message RerankingRequest {
+    string query = 1;
+    string passage = 2;
+}
+
+message RerankingReply {
+    float score = 1;
+}
