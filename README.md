@@ -2,7 +2,7 @@
 
 Experimental Postgres extensions to support end-to-end Retrieval-Augmented Generation (RAG) pipelines.
 
-Currently provide:
+These currently provide:
 
 
 ### Text extraction and conversion
@@ -18,7 +18,7 @@ Currently provide:
 
 * Text chunking by character count using [text-splitter](https://github.com/benbrandt/text-splitter).
 
-* Text chunking by token count (tokenising for [bge-small-en-v1.5](https://huggingface.co/Xenova/bge-small-en-v1.5) -- see below), again using [text-splitter](https://github.com/benbrandt/text-splitter).
+* Text chunking by token count, again using [text-splitter](https://github.com/benbrandt/text-splitter).
 
 
 ### Local embedding and reranking models
@@ -69,9 +69,10 @@ Finally, inside each of the three folders inside `exts`:
 PG_CONFIG=/path/to/pg_config cargo pgrx install --release
 ```
 
-## Embedding and reranking extensions
 
-### Background worker process
+### Embedding and reranking extensions
+
+#### Background worker process
 
 To avoid requiring excessive memory when reranking or generating embeddings in multiple Postgres processes, these tasks are done by a multi-threaded background worker.
 
@@ -87,11 +88,13 @@ When using `cargo pgrx run` with Postgres instances installed by pgrx, the `post
 
 When using `cargo pgrx test`, the `postgresql.conf` file is inside the `target` directory of your extension, e.g. `~/path/to/myext/target/test-pgdata/N` (where N is the relevant Postgres version).
 
-### ORT and ONNX installation
+#### ORT and ONNX installation
+
+The `ort` and `ort-sys` crates are currently supplied in patched form in `vendor` while awaiting a `2.0.0-rc.9` release that [fixes a build issue](https://github.com/pykeio/ort/issues/305).
 
 The `ort` package supplies precompiled binaries for the ONNX runtime (currently v1.19). On some platforms, this may give rise to `undefined symbol` errors. In that case, you'll need to compile the ONNX runtime yourself and provide the build location to `cargo pgrx install` in an `ORT_LIB_LOCATION` environment variable. An example for Ubuntu 24.04 is provided in [COMPILE.sh](COMPILE.sh).
 
-### Remote ONNX model file
+#### Remote ONNX model file
 
 By default, the embedding and reranking models are embedded within the extension (using Rust's `include_bytes!()` macro). But it's also possible to have these `.onnx` files downloaded on first use. This is enabled by the `remote_onnx` crate feature, and the download URL is specified via the `REMOTE_ONNX_URL` build-time environment variable. For example:
 
