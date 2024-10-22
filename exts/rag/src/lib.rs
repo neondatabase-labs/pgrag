@@ -1,10 +1,11 @@
 use pgrx::prelude::*;
 
-mod errors;
-mod json_api;
+mod anthropic;
 mod chunk;
 mod docx;
+mod errors;
 mod fireworks;
+mod json_api;
 mod markdown;
 mod openai;
 mod pdf;
@@ -26,8 +27,7 @@ mod rag {
 
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
-mod tests {
-}
+mod tests {}
 
 /// This module is required by `cargo pgrx test` invocations.
 /// It must be visible at the root of your extension crate.

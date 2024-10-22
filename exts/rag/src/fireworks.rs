@@ -21,7 +21,7 @@ mod rag {
 
     #[pg_extern(strict)]
     pub fn _fireworks_chat_completion(json_body: pgrx::Json, key: &str) -> pgrx::Json {
-        let json = json_api("https://api.fireworks.ai/inference/v1/chat/completions", key, json_body);
+        let json = json_api("https://api.fireworks.ai/inference/v1/chat/completions", Some(key), None, json_body);
         pgrx::Json(json)
     }
 

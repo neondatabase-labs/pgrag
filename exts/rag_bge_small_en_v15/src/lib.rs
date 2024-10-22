@@ -3,7 +3,6 @@ mod errors;
 mod embeddings {
     tonic::include_proto!("embeddings");
 }
-#[macro_use]
 mod util;
 
 use embeddings::{

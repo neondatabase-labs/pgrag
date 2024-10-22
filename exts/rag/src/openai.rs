@@ -46,7 +46,7 @@ mod rag {
             input: input.to_string(),
         };
 
-        let json = json_api("https://api.openai.com/v1/embeddings", key, body);
+        let json = json_api("https://api.openai.com/v1/embeddings", Some(key), None, body);
         let embed_data: OpenAIEmbeddingData =
             serde_json::from_value(json).expect_or_pg_err("Unexpected JSON structure in OpenAI response");
 
@@ -91,7 +91,7 @@ mod rag {
 
     #[pg_extern(strict)]
     pub fn _openai_chat_completion(json_body: pgrx::Json, key: &str) -> pgrx::Json {
-        let json = json_api("https://api.openai.com/v1/chat/completions", key, json_body);
+        let json = json_api("https://api.openai.com/v1/chat/completions", Some(key), None, json_body);
         pgrx::Json(json)
     }
 
@@ -118,6 +118,7 @@ mod rag {
 mod tests {
     use super::rag::*;
     use pgrx::prelude::*;
+    use serde_json::json;
     use std::env;
 
     fn openai_api_key() -> String {
@@ -127,12 +128,12 @@ mod tests {
         }
     }
 
-    #[pg_test(error = "[rag] HTTP status code 401 trying to reach API")]
+    #[pg_test(error = "[rag] HTTP status code 401 trying to reach API: Incorrect API key provided: invalid-key. You can find your API key at https://platform.openai.com/account/api-keys.")]
     fn test_embedding_openai_raw_bad_key() {
         _openai_text_embedding("text-embedding-3-small", "hello world!", "invalid-key");
     }
 
-    #[pg_test(error = "[rag] HTTP status code 404 trying to reach API")]
+    #[pg_test(error = "[rag] HTTP status code 404 trying to reach API: The model `text-embedding-3-immense` does not exist or you do not have access to it.")]
     fn test_embedding_openai_raw_bad_model() {
         _openai_text_embedding("text-embedding-3-immense", "hello world!", &openai_api_key());
     }
@@ -141,5 +142,45 @@ mod tests {
     fn test_embedding_openai_raw_has_data() {
         let embedding = _openai_text_embedding("text-embedding-3-small", "hello world!", &openai_api_key());
         assert_eq!(embedding.len(), 1536);
+    }
+
+    #[pg_test]
+    fn test_openai_chat_completion() {
+        let result = _openai_chat_completion(
+            pgrx::Json {
+                0: json!({
+                    "model": "gpt-4o-mini",
+                    "messages":[
+                        {
+                            "role": "system",
+                            "content": "you are a helpful assistant"
+                        }, {
+                            "role": "user",
+                            "content": "hi!"
+                        }
+                    ]
+                }),
+            },
+            &openai_api_key(),
+        );
+        assert!(result
+            .0
+            .as_object()
+            .unwrap()
+            .get("choices")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .get(0)
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .get("message")
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .get("content")
+            .unwrap()
+            .is_string());
     }
 }

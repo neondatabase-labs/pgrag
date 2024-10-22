@@ -2,7 +2,6 @@ mod errors;
 mod reranking {
     tonic::include_proto!("reranking");
 }
-#[macro_use]
 mod util;
 
 use errors::*;
