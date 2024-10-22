@@ -25,22 +25,22 @@ make install
 cd ..
 
 # ONNX
-wget https://github.com/microsoft/onnxruntime/archive/refs/tags/v1.19.2.tar.gz -O onnxruntime-1.19.2.tar.gz
-tar xzf onnxruntime-1.19.2.tar.gz
-cd onnxruntime-1.19.2
+wget https://github.com/microsoft/onnxruntime/archive/refs/tags/v1.18.1.tar.gz -O onnxruntime-1.18.1.tar.gz
+tar xzf onnxruntime-1.18.1.tar.gz
+cd onnxruntime-1.18.1
 ./build.sh --config Release --parallel --skip_submodule_sync --skip_tests --allow_running_as_root
 
 # pgrag
-git clone https://github.com/neondatabase/pgrag.git
+git clone https://github.com/neondatabase-labs/pgrag.git
 cd pgrag
 cd lib/bge_small_en_v15 && tar xzf model.onnx.tar.gz && cd ../..
 cd lib/jina_reranker_v1_tiny_en && tar xzf model.onnx.tar.gz && cd ../..
 cd exts/rag
 cargo pgrx install --release
 cd ../rag_bge_small_en_v15
-ORT_LIB_LOCATION=/home/ubuntu/onnxruntime-1.19.2/build/Linux cargo pgrx install --release
+ORT_LIB_LOCATION=/home/ubuntu/onnxruntime-1.18.1/build/Linux cargo pgrx install --release
 cd ../rag_jina_reranker_v1_tiny_en
-ORT_LIB_LOCATION=/home/ubuntu/onnxruntime-1.19.2/build/Linux cargo pgrx install --release
+ORT_LIB_LOCATION=/home/ubuntu/onnxruntime-1.18.1/build/Linux cargo pgrx install --release
 cd ../rag
 
 echo "shared_preload_libraries = 'rag_bge_small_en_v15.so'" >>  ~/.pgrx/data-16/postgresql.conf

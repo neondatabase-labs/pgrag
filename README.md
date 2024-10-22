@@ -92,9 +92,9 @@ When using `cargo pgrx test`, `postgresql.conf` is inside the `target` directory
 
 #### ORT and ONNX installation
 
-The `ort` and `ort-sys` crates are currently supplied in patched form in `vendor` while awaiting a `2.0.0-rc.9` release that [fixes a build issue](https://github.com/pykeio/ort/issues/305).
+The `ort` and `ort-sys` crates are currently supplied in patched form in `vendor`, otherwise `ort` and `ort-sys` versions end up mismatched, and that leads to build failures. We stick at `2.0.0-rc.4` (by keeping `fastembed` at `=3.14.1`) because this is the last version using the ONNX Runtime at `1.18`, and `1.19` has build some build problems.
 
-The `ort` package supplies precompiled binaries for the ONNX runtime (currently v1.19). On some platforms, this may give rise to `undefined symbol` errors. In that case, you'll need to compile the ONNX runtime yourself and provide the build location to `cargo pgrx install` in the `ORT_LIB_LOCATION` environment variable. An example for Ubuntu 24.04 is provided in [COMPILE.sh](COMPILE.sh).
+The `ort` package supplies precompiled binaries for the ONNX runtime (currently v1.18). On some platforms, this may give rise to `undefined symbol` errors. In that case, you'll need to compile the ONNX runtime yourself and provide the build location to `cargo pgrx install` in the `ORT_LIB_LOCATION` environment variable. An example for Ubuntu 24.04 is provided in [COMPILE.sh](COMPILE.sh).
 
 #### Remote ONNX model file
 

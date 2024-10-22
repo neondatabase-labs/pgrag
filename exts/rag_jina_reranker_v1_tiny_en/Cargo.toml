@@ -22,7 +22,7 @@ pg_test = []
 remote_onnx = []
 
 [dependencies]
-fastembed = "=4.1.0"
+fastembed = "=3.14.1"
 pgrx = "0.12.6"
 tonic = "0.12.3"
 prost = "0.13.3"
@@ -34,10 +34,9 @@ rayon = "1.10.0"
 reqwest = "0.12.8"
 
 [patch.crates-io]
-# ort-sys-2.0.0-rc.8 has some build issues for which fixes are not yet released
-# so these are snapshots from `main` which lie about their versions
-ort = { path = "../../lib/ort-2.0.0-d7b5b17-patched" }
-ort-sys = { path = "../../lib/ort-2.0.0-d7b5b17-patched/ort-sys" }
+# fixing both crates to rc.4 prevents build issues
+ort = { path = "../../lib/ort-2.0.0-rc.4" }
+ort-sys = { path = "../../lib/ort-2.0.0-rc.4/ort-sys" }
 
 [build-dependencies]
 tonic-build = "0.12.3"

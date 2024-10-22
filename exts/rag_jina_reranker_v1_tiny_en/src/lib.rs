@@ -55,17 +55,6 @@ pub extern "C" fn _PG_init() {
 
 // model loading
 
-macro_rules! local_tokenizer_files {
-    () => {
-        TokenizerFiles {
-            tokenizer_file: include_bytes!(concat!(model_path!(), "tokenizer.json")).to_vec(),
-            config_file: include_bytes!(concat!(model_path!(), "config.json")).to_vec(),
-            special_tokens_map_file: include_bytes!(concat!(model_path!(), "special_tokens_map.json")).to_vec(),
-            tokenizer_config_file: include_bytes!(concat!(model_path!(), "tokenizer_config.json")).to_vec(),
-        }
-    };
-}
-
 #[cfg(not(feature = "remote_onnx"))]
 async fn get_onnx() -> Result<Vec<u8>, reqwest::Error> {
     Ok(include_bytes!(concat!(model_path!(), "model.onnx")).to_vec())
@@ -94,8 +83,17 @@ impl Reranker for RerankerStruct {
 
         let model = match TEXT_RERANK
             .get_or_try_init(|| async {
-                let onnx = get_onnx().await?;
-                let user_def_model = UserDefinedRerankingModel::new(onnx, local_tokenizer_files!());
+                let onnx_file = get_onnx().await?;
+                let tokenizer_files = TokenizerFiles {
+                    tokenizer_file: include_bytes!(concat!(model_path!(), "tokenizer.json")).to_vec(),
+                    config_file: include_bytes!(concat!(model_path!(), "config.json")).to_vec(),
+                    special_tokens_map_file: include_bytes!(concat!(model_path!(), "special_tokens_map.json")).to_vec(),
+                    tokenizer_config_file: include_bytes!(concat!(model_path!(), "tokenizer_config.json")).to_vec(),
+                };
+                let user_def_model = UserDefinedRerankingModel {
+                    onnx_file,
+                    tokenizer_files,
+                };
 
                 TextRerank::try_new_from_user_defined(user_def_model, Default::default())
             })
@@ -120,7 +118,7 @@ impl Reranker for RerankerStruct {
                     .next()
                     .unwrap_or_pg_err("Empty result vector")
                     .score;
-                
+
                 let reply = RerankingReply { score };
                 Ok(Response::new(reply))
             }
@@ -224,7 +222,7 @@ mod rag_jina_reranker_v1_tiny_en {
                     .await
                     .expect_or_pg_err("Couldn't get response from worker");
 
-                -response.into_inner().score  // for distance, lower numbers mean more similarity
+                -response.into_inner().score // for distance, lower numbers mean more similarity
             })
     }
 }
