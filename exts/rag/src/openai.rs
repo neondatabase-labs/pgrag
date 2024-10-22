@@ -45,7 +45,6 @@ mod rag {
             model: model.to_string(),
             input: input.to_string(),
         };
-
         let json = json_api("https://api.openai.com/v1/embeddings", Some(key), None, body);
         let embed_data: OpenAIEmbeddingData =
             serde_json::from_value(json).expect_or_pg_err("Unexpected JSON structure in OpenAI response");

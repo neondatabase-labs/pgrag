@@ -1,7 +1,7 @@
 use crate::errors::*;
 use pgrx::prelude::*;
-use ureq::serde_json::*;
 use serde::Deserialize;
+use ureq::serde_json::*;
 
 #[derive(Deserialize)]
 struct JSONErrResponse {
@@ -10,6 +10,10 @@ struct JSONErrResponse {
 #[derive(Deserialize)]
 struct JSONErrObject {
     message: String,
+}
+#[derive(Deserialize)]
+struct JSONAltErrResponse {
+    detail: String,
 }
 
 pub fn json_api(
@@ -35,10 +39,16 @@ pub fn json_api(
             error!("{ERR_PREFIX} Transport error communicating with API");
         }
         Err(ureq::Error::Status(code, response)) => {
-            let json: std::io::Result<JSONErrResponse> = response.into_json();
+            let json: std::io::Result<serde_json::Value> = response.into_json();
             let msg = match json {
-                Err(_) => "no further details".to_string(),
-                Ok(json) => json.error.message,
+                Err(_) => "unparseable response".to_string(),
+                Ok(json) => match serde_json::from_value::<JSONErrResponse>(json.clone()) {
+                    Err(_) => match serde_json::from_value::<JSONAltErrResponse>(json) {
+                        Err(_) => "no further details".to_string(),
+                        Ok(json) => json.detail,
+                    },
+                    Ok(json) => json.error.message,
+                },
             };
             error!("{ERR_PREFIX} HTTP status code {code} trying to reach API: {msg}")
         }

@@ -9,6 +9,7 @@ mod json_api;
 mod markdown;
 mod openai;
 mod pdf;
+mod voyageai;
 
 pg_module_magic!();
 
