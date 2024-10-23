@@ -87,7 +87,7 @@ impl Reranker for RerankerStruct {
     async fn rerank(&self, request: Request<RerankingRequest>) -> Result<Response<RerankingReply>, Status> {
         let request = request.into_inner();
         let query = request.query;
-        let passage = request.passage;
+        let passages = request.passages;
 
         let model = match TEXT_RERANK
             .get_or_try_init(|| async {
@@ -113,21 +113,17 @@ impl Reranker for RerankerStruct {
 
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.thread_pool.spawn(|| {
-            let reranking = model.rerank(query, vec![passage], false, None);
+            let reranking = model.rerank(query, passages, false, None);
             tx.send(reranking).expect("Channel send failed");
         });
 
         match rx.await {
             Err(_) => Err(Status::internal("Reranking process crashed")),
             Ok(Err(rerank_error)) => Err(Status::internal(rerank_error.to_string())),
-            Ok(Ok(rerankings)) => {
-                let score = rerankings
-                    .into_iter()
-                    .next()
-                    .unwrap_or_pg_err("Empty result vector")
-                    .score;
-
-                let reply = RerankingReply { score };
+            Ok(Ok(mut rerankings)) => {
+                rerankings.sort_by(|r1, r2| r1.index.cmp(&r2.index)); // return to input order
+                let scores = rerankings.into_iter().map(|rerank| rerank.score).collect();
+                let reply = RerankingReply { scores };
                 Ok(Response::new(reply))
             }
         }
@@ -199,8 +195,8 @@ mod rag_jina_reranker_v1_tiny_en {
     use tonic::transport::{Endpoint, Uri};
     use tower::service_fn;
 
-    #[pg_extern(immutable, strict)]
-    pub fn rerank_distance(query: String, passage: String) -> f32 {
+    #[pg_extern(immutable, strict, name = "rerank_distance")]
+    pub fn rerank_distances(query: String, passages: Vec<String>) -> Vec<f32> {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -221,14 +217,23 @@ mod rag_jina_reranker_v1_tiny_en {
                     .expect_or_pg_err("Couldn't connect worker channel");
 
                 let mut client = RerankerClient::new(channel);
-                let request = tonic::Request::new(RerankingRequest { query, passage });
+                let request = tonic::Request::new(RerankingRequest { query, passages });
                 let response = client
                     .rerank(request)
                     .await
                     .expect_or_pg_err("Worker process returned error");
 
-                -response.into_inner().score // for distance, lower numbers mean more similarity
+                // for distance, lower numbers mean more similarity, hence the minus sign
+                response.into_inner().scores.into_iter().map(|score| -score).collect()
             })
+    }
+
+    #[pg_extern(immutable, strict)]
+    pub fn rerank_distance(query: String, passage: String) -> f32 {
+        rerank_distances(query, vec![passage])
+            .into_iter()
+            .next()
+            .unwrap_or_pg_err("No reranking scores returned")
     }
 }
 
@@ -249,21 +254,16 @@ mod tests {
 
     #[pg_test]
     fn test_rerank_2() {
-        let candidate_pets = vec![
+        let pets = vec![
             "crocodile".to_owned(),
             "hamster".to_owned(),
             "indeterminate".to_owned(),
             "floorboard".to_owned(),
             "cat".to_owned(),
         ];
-
-        let mut scored_pets: Vec<(&String, f32)> = candidate_pets
-            .iter()
-            .map(|pet| (pet, rerank_distance("pet".to_string(), pet.to_string())))
-            .collect();
-
+        let scores = rerank_distances("pet".to_string(), pets.clone());
+        let mut scored_pets: Vec<(&String, f32)> = pets.iter().zip(scores.into_iter()).collect();
         scored_pets.sort_by(|pet1, pet2| pet1.1.partial_cmp(&(pet2.1)).unwrap());
-
         let ordered_pets: Vec<&String> = scored_pets.iter().map(|pet| pet.0).collect();
         assert!(ordered_pets == vec!["cat", "hamster", "crocodile", "floorboard", "indeterminate"]);
     }

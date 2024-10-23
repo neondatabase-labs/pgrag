@@ -7,9 +7,9 @@ service Reranker {
 
 message RerankingRequest {
     string query = 1;
-    string passage = 2;
+    repeated string passages = 2;
 }
 
 message RerankingReply {
-    float score = 1;
+    repeated float scores = 1;
 }
