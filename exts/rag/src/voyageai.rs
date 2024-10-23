@@ -41,13 +41,13 @@ mod rag {
     }
 
     #[pg_extern(immutable)]
-    pub fn _voyageai_embedding(model: String, input_type: Option<String>, input: String, key: String) -> Vec<f32> {
+    pub fn _voyageai_embedding(model: String, input_type: Option<String>, input: String, key: &str) -> Vec<f32> {
         let body = VoyageAIEmbeddingReq {
             model,
             input,
             input_type,
         };
-        let json = json_api("https://api.voyageai.com/v1/embeddings", Some(&key), None, body);
+        let json = json_api("https://api.voyageai.com/v1/embeddings", Some(key), None, body);
         let embed_data: VoyageAIEmbeddingData =
             serde_json::from_value(json).expect_or_pg_err("Unexpected JSON structure in Voyage AI response");
 
@@ -122,17 +122,17 @@ mod rag {
     }
 
     #[pg_extern(immutable, strict)]
-    pub fn _voyageai_rerank_scores(model: String, query: String, documents: Vec<String>, key: String) -> Vec<f32> {
+    pub fn _voyageai_rerank_scores(model: String, query: String, documents: Vec<String>, key: &str) -> Vec<f32> {
         let body = VoyageAIRerankingReq {
             model,
             query,
             documents,
         };
-        let json = json_api("https://api.voyageai.com/v1/rerank", Some(&key), None, body);
+        let json = json_api("https://api.voyageai.com/v1/rerank", Some(key), None, body);
         let rerank_data: VoyageAIRerankingData =
             serde_json::from_value(json).expect_or_pg_err("Unexpected JSON structure in Voyage AI response");
         let mut reranks = rerank_data.data;
-        reranks.sort_by(|r1, r2| r1.index.cmp(&r2.index)); // return to input order
+        reranks.sort_by(|r1, r2| r1.index.cmp(&r2.index));  // return to input order
         reranks.into_iter().map(|rerank| rerank.relevance_score).collect()
     }
 
@@ -188,7 +188,7 @@ mod tests {
             "voyage-3-lite".to_string(),
             Some("document".to_string()),
             "hello world!".to_string(),
-            "invalid-key".to_string(),
+            "invalid-key",
         );
     }
 
@@ -200,7 +200,7 @@ mod tests {
             "voyage-123-whizzo".to_string(),
             Some("query".to_string()),
             "hello world!".to_string(),
-            voyageai_api_key(),
+            &voyageai_api_key(),
         );
     }
 
@@ -210,7 +210,7 @@ mod tests {
             "voyage-3-lite".to_string(),
             Some("document".to_string()),
             "hello world!".to_string(),
-            voyageai_api_key(),
+            &voyageai_api_key(),
         );
         assert_eq!(embedding.len(), 512);
     }
@@ -221,19 +221,19 @@ mod tests {
             "voyage-3-lite".to_string(),
             Some("document".to_string()),
             "hello world!".to_string(),
-            voyageai_api_key(),
+            &voyageai_api_key(),
         );
         let embedding_q = _voyageai_embedding(
             "voyage-3-lite".to_string(),
             Some("query".to_string()),
             "hello world!".to_string(),
-            voyageai_api_key(),
+            &voyageai_api_key(),
         );
         let embedding_n = _voyageai_embedding(
             "voyage-3-lite".to_string(),
             None,
             "hello world!".to_string(),
-            voyageai_api_key(),
+            &voyageai_api_key(),
         );
         assert_eq!(embedding_d.len(), 512);
         assert_eq!(embedding_q.len(), 512);
@@ -257,7 +257,7 @@ mod tests {
             "rerank-2-lite".to_string(),
             "my father came home with a fluffy new pet".to_string(),
             pets.iter().map(|pet| format!("dad brought us a {pet}")).collect(),
-            voyageai_api_key(),
+            &voyageai_api_key(),
         );
 
         let mut scored: Vec<(String, &f32)> = pets.into_iter().zip(scores.iter()).collect();
@@ -277,7 +277,7 @@ mod tests {
         );
     }
 
-    /* note that reranking scores do not appear to be stable, but depend on context -- for example:
+    /* note that Voyage reranking scores do not appear to be stable, but depend on context -- for example:
 
     rag=# select rag.voyageai_rerank_score('rerank-2-lite', 'my dad came home with a fluffy pet', ARRAY['dad brought us a dog', 'dad brought us a cat', 'i called in sick']);
         voyageai_rerank_score      

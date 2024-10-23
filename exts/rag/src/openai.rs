@@ -40,11 +40,8 @@ mod rag {
     }
 
     #[pg_extern(immutable, strict)]
-    pub fn _openai_text_embedding(model: &str, input: &str, key: &str) -> Vec<f32> {
-        let body = OpenAIEmbeddingReq {
-            model: model.to_string(),
-            input: input.to_string(),
-        };
+    pub fn _openai_text_embedding(model: String, input: String, key: &str) -> Vec<f32> {
+        let body = OpenAIEmbeddingReq { model, input };
         let json = json_api("https://api.openai.com/v1/embeddings", Some(key), None, body);
         let embed_data: OpenAIEmbeddingData =
             serde_json::from_value(json).expect_or_pg_err("Unexpected JSON structure in OpenAI response");
@@ -127,19 +124,23 @@ mod tests {
         }
     }
 
-    #[pg_test(error = "[rag] HTTP status code 401 trying to reach API: Incorrect API key provided: invalid-key. You can find your API key at https://platform.openai.com/account/api-keys.")]
+    #[pg_test(
+        error = "[rag] HTTP status code 401 trying to reach API: Incorrect API key provided: invalid-key. You can find your API key at https://platform.openai.com/account/api-keys."
+    )]
     fn test_embedding_openai_raw_bad_key() {
-        _openai_text_embedding("text-embedding-3-small", "hello world!", "invalid-key");
+        _openai_text_embedding("text-embedding-3-small".to_string(), "hello world!".to_string(), "invalid-key");
     }
 
-    #[pg_test(error = "[rag] HTTP status code 404 trying to reach API: The model `text-embedding-3-immense` does not exist or you do not have access to it.")]
+    #[pg_test(
+        error = "[rag] HTTP status code 404 trying to reach API: The model `text-embedding-3-immense` does not exist or you do not have access to it."
+    )]
     fn test_embedding_openai_raw_bad_model() {
-        _openai_text_embedding("text-embedding-3-immense", "hello world!", &openai_api_key());
+        _openai_text_embedding("text-embedding-3-immense".to_string(), "hello world!".to_string(), &openai_api_key());
     }
 
     #[pg_test]
     fn test_embedding_openai_raw_has_data() {
-        let embedding = _openai_text_embedding("text-embedding-3-small", "hello world!", &openai_api_key());
+        let embedding = _openai_text_embedding("text-embedding-3-small".to_string(), "hello world!".to_string(), &openai_api_key());
         assert_eq!(embedding.len(), 1536);
     }
 

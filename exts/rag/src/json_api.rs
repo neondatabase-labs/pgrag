@@ -4,7 +4,7 @@ use serde::Deserialize;
 use ureq::serde_json::*;
 
 #[derive(Deserialize)]
-struct JSONErrResponse {
+struct Err1 {
     error: JSONErrObject,
 }
 #[derive(Deserialize)]
@@ -12,8 +12,12 @@ struct JSONErrObject {
     message: String,
 }
 #[derive(Deserialize)]
-struct JSONAltErrResponse {
+struct Err2 {
     detail: String,
+}
+#[derive(Deserialize)]
+struct Err3 {
+    error: String,
 }
 
 pub fn json_api(
@@ -39,16 +43,14 @@ pub fn json_api(
             error!("{ERR_PREFIX} Transport error communicating with API");
         }
         Err(ureq::Error::Status(code, response)) => {
-            let json: std::io::Result<serde_json::Value> = response.into_json();
+            let json: std::io::Result<Value> = response.into_json();
             let msg = match json {
-                Err(_) => "unparseable response".to_string(),
-                Ok(json) => match serde_json::from_value::<JSONErrResponse>(json.clone()) {
-                    Err(_) => match serde_json::from_value::<JSONAltErrResponse>(json) {
-                        Err(_) => "no further details".to_string(),
-                        Ok(json) => json.detail,
-                    },
-                    Ok(json) => json.error.message,
-                },
+                Err(_) => "no further details".to_string(),
+                Ok(json) => from_value::<Err1>(json.clone())
+                    .and_then(|obj| Ok(obj.error.message))
+                    .or_else(|_| from_value::<Err2>(json.clone()).and_then(|obj| Ok(obj.detail)))
+                    .or_else(|_| from_value::<Err3>(json).and_then(|obj: Err3| Ok(obj.error)))
+                    .unwrap_or("no further details".to_string()),
             };
             error!("{ERR_PREFIX} HTTP status code {code} trying to reach API: {msg}")
         }
