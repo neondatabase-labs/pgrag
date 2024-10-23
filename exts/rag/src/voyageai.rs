@@ -139,6 +139,9 @@ mod tests {
         let embedding_d = _voyageai_embedding("voyage-3-lite", Some("document"), "hello world!", &voyageai_api_key());
         let embedding_q = _voyageai_embedding("voyage-3-lite", Some("query"), "hello world!", &voyageai_api_key());
         let embedding_n = _voyageai_embedding("voyage-3-lite", None, "hello world!", &voyageai_api_key());
+        assert_eq!(embedding_d.len(), 512);
+        assert_eq!(embedding_q.len(), 512);
+        assert_eq!(embedding_n.len(), 512);
         assert_ne!(embedding_d, embedding_q);
         assert_ne!(embedding_d, embedding_n);
         assert_ne!(embedding_q, embedding_n);

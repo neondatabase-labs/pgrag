@@ -74,6 +74,17 @@ mod tests {
         );
     }
 
+    #[pg_test(error = "[rag] HTTP status code 400 trying to reach API: anthropic-version: \"1980-01-01\" is not a valid version")]
+    fn test_anthropic_bad_version() {
+        _anthropic_messages(
+            "1980-01-01",
+            pgrx::Json {
+                0: json!({}),
+            },
+            &anthropic_api_key(),
+        );
+    }
+
     #[pg_test]
     fn test_anthropic_messages() {
         let result = _anthropic_messages(
