@@ -200,7 +200,7 @@ mod rag_jina_reranker_v1_tiny_en {
     use tower::service_fn;
 
     #[pg_extern(immutable, strict)]
-    pub fn rerank_distance(query: &str, passage: &str) -> f32 {
+    pub fn rerank_distance(query: String, passage: String) -> f32 {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -221,14 +221,11 @@ mod rag_jina_reranker_v1_tiny_en {
                     .expect_or_pg_err("Couldn't connect worker channel");
 
                 let mut client = RerankerClient::new(channel);
-                let request = tonic::Request::new(RerankingRequest {
-                    query: query.to_string(),
-                    passage: passage.to_string(),
-                });
+                let request = tonic::Request::new(RerankingRequest { query, passage });
                 let response = client
                     .rerank(request)
                     .await
-                    .expect_or_pg_err("Couldn't get response from worker");
+                    .expect_or_pg_err("Worker process returned error");
 
                 -response.into_inner().score // for distance, lower numbers mean more similarity
             })
@@ -245,8 +242,8 @@ mod tests {
 
     #[pg_test]
     fn test_rerank_1() {
-        let similar_distance = rerank_distance("cat", "dog");
-        let dissimilar_distance = rerank_distance("cat", "pirate");
+        let similar_distance = rerank_distance("cat".to_string(), "dog".to_string());
+        let dissimilar_distance = rerank_distance("cat".to_string(), "pirate".to_string());
         assert!(similar_distance < dissimilar_distance);
     }
 
@@ -262,7 +259,7 @@ mod tests {
 
         let mut scored_pets: Vec<(&String, f32)> = candidate_pets
             .iter()
-            .map(|pet| (pet, rerank_distance("pet", pet)))
+            .map(|pet| (pet, rerank_distance("pet".to_string(), pet.to_string())))
             .collect();
 
         scored_pets.sort_by(|pet1, pet2| pet1.1.partial_cmp(&(pet2.1)).unwrap());

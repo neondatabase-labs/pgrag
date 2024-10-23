@@ -193,7 +193,7 @@ mod rag_bge_small_en_v15 {
     use embeddings::EmbeddingRequest;
 
     #[pg_extern(immutable, strict)]
-    pub fn _embedding(text: &str) -> Vec<f32> {
+    pub fn _embedding(text: String) -> Vec<f32> {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -214,11 +214,11 @@ mod rag_bge_small_en_v15 {
                     .expect_or_pg_err("Couldn't connect worker channel");
 
                 let mut client = EmbeddingGeneratorClient::new(channel);
-                let request = tonic::Request::new(EmbeddingRequest { text: text.to_string() });
+                let request = tonic::Request::new(EmbeddingRequest { text });
                 let response = client
                     .get_embedding(request)
                     .await
-                    .expect_or_pg_err("Couldn't get response from worker");
+                    .expect_or_pg_err("Worker process returned error");
 
                 response.into_inner().embedding
             })
@@ -247,17 +247,17 @@ mod tests {
 
     #[pg_test]
     fn test_embedding_length() {
-        assert_eq!(_embedding("hello world!").len(), 384);
+        assert_eq!(_embedding("hello world!".to_string()).len(), 384);
     }
 
     #[pg_test]
     fn test_embedding_immutability() {
-        assert_eq!(_embedding("hello world!"), _embedding("hello world!"));
+        assert_eq!(_embedding("hello world!".to_string()), _embedding("hello world!".to_string()));
     }
 
     #[pg_test]
     fn test_embedding_variability() {
-        assert_ne!(_embedding("hello world!"), _embedding("bye moon!"));
+        assert_ne!(_embedding("hello world!".to_string()), _embedding("bye moon!".to_string()));
     }
 }
 
