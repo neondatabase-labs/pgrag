@@ -34,7 +34,8 @@ tokio-stream = "0.1.16"
 tower = "0.5.1"
 hyper-util = "0.1.9"
 rayon = "1.10.0"
-reqwest = "0.12.8"
+reqwest = { version = "0.12.8", features = ["stream"] }
+futures-util = "0.3.31"
 
 [patch.crates-io]
 # fixing both crates to rc.4 prevents build issues

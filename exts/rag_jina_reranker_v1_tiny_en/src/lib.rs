@@ -6,6 +6,8 @@ mod util;
 
 use errors::*;
 use fastembed::{TextRerank, TokenizerFiles, UserDefinedRerankingModel};
+#[cfg(feature = "remote_onnx")]
+use futures_util::StreamExt;
 use pgrx::{bgworkers::*, prelude::*};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use reranking::{
@@ -24,6 +26,9 @@ use tonic::{transport::Server, Request, Response, Status};
 
 mconst!(ext_name, "rag_jina_reranker_v1_tiny_en");
 mconst!(model_path, "../../../lib/jina_reranker_v1_tiny_en/");
+
+#[cfg(feature = "remote_onnx")]
+const ONNX_SIZE: usize = 132_350_375;
 
 macro_rules! socket_path {
     ($pid:expr) => {
@@ -63,8 +68,12 @@ async fn get_onnx() -> Result<Vec<u8>, reqwest::Error> {
 async fn get_onnx() -> Result<Vec<u8>, reqwest::Error> {
     let url = env!("REMOTE_ONNX_URL");
     let response = reqwest::get(url).await?;
-    let bytes = response.bytes().await?;
-    Ok(bytes.to_vec())
+    let mut stream = response.bytes_stream();
+    let mut vec: Vec<u8> = Vec::with_capacity(ONNX_SIZE);
+    while let Some(chunk) = stream.next().await {
+        vec.extend(chunk?);
+    }
+    Ok(vec)
 }
 
 // background worker
