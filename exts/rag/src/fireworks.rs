@@ -40,7 +40,12 @@ mod rag {
     #[pg_extern(immutable, strict)]
     pub fn _fireworks_text_embedding(model: String, input: String, key: &str) -> Vec<f32> {
         let body = FireworksAIEmbeddingReq { model, input };
-        let json = json_api("https://api.fireworks.ai/inference/v1/embeddings", Some(key), None, body);
+        let json = json_api(
+            "https://api.fireworks.ai/inference/v1/embeddings",
+            Some(key),
+            None,
+            body,
+        );
         let embed_data: FireworksAIEmbeddingData =
             serde_json::from_value(json).expect_or_pg_err("Unexpected JSON structure in Fireworks AI response");
 
@@ -74,15 +79,15 @@ mod rag {
         LANGUAGE SQL IMMUTABLE STRICT AS $$
           SELECT rag.fireworks_text_embedding('nomic-ai/nomic-embed-text-v1', input)::vector(768);
         $$;
-        CREATE FUNCTION rag.fireworks_embedding_whereisai_uae_large_v1(input text) RETURNS vector(1024)
+        CREATE FUNCTION rag.fireworks_text_embedding_whereisai_uae_large_v1(input text) RETURNS vector(1024)
         LANGUAGE SQL IMMUTABLE STRICT AS $$
           SELECT rag.fireworks_text_embedding('WhereIsAI/UAE-Large-V1', input)::vector(1024);
         $$;
-        CREATE FUNCTION rag.fireworks_embedding_thenlper_gte_large(input text) RETURNS vector(1024)
+        CREATE FUNCTION rag.fireworks_text_embedding_thenlper_gte_large(input text) RETURNS vector(1024)
         LANGUAGE SQL IMMUTABLE STRICT AS $$
           SELECT rag.fireworks_text_embedding('thenlper/gte-large', input)::vector(1024);
         $$;
-        CREATE FUNCTION rag.fireworks_embedding_thenlper_gte_base(input text) RETURNS vector(768)
+        CREATE FUNCTION rag.fireworks_text_embedding_thenlper_gte_base(input text) RETURNS vector(768)
         LANGUAGE SQL IMMUTABLE STRICT AS $$
           SELECT rag.fireworks_text_embedding('thenlper/gte-base', input)::vector(768);
         $$;",
@@ -137,31 +142,51 @@ mod tests {
 
     #[pg_test]
     fn test_fireworks_embedding_length1() {
-        let embedding = _fireworks_text_embedding("nomic-ai/nomic-embed-text-v1.5".to_string(), "hello world!".to_string(), &fireworks_api_key());
+        let embedding = _fireworks_text_embedding(
+            "nomic-ai/nomic-embed-text-v1.5".to_string(),
+            "hello world!".to_string(),
+            &fireworks_api_key(),
+        );
         assert_eq!(embedding.len(), 768);
     }
 
     #[pg_test]
     fn test_fireworks_embedding_length2() {
-        let embedding = _fireworks_text_embedding("nomic-ai/nomic-embed-text-v1".to_string(), "hello world!".to_string(), &fireworks_api_key());
+        let embedding = _fireworks_text_embedding(
+            "nomic-ai/nomic-embed-text-v1".to_string(),
+            "hello world!".to_string(),
+            &fireworks_api_key(),
+        );
         assert_eq!(embedding.len(), 768);
     }
 
     #[pg_test]
     fn test_fireworks_embedding_length3() {
-        let embedding = _fireworks_text_embedding("WhereIsAI/UAE-Large-V1".to_string(), "hello world!".to_string(), &fireworks_api_key());
+        let embedding = _fireworks_text_embedding(
+            "WhereIsAI/UAE-Large-V1".to_string(),
+            "hello world!".to_string(),
+            &fireworks_api_key(),
+        );
         assert_eq!(embedding.len(), 1024);
     }
 
     #[pg_test]
     fn test_fireworks_embedding_length4() {
-        let embedding = _fireworks_text_embedding("thenlper/gte-large".to_string(), "hello world!".to_string(), &fireworks_api_key());
+        let embedding = _fireworks_text_embedding(
+            "thenlper/gte-large".to_string(),
+            "hello world!".to_string(),
+            &fireworks_api_key(),
+        );
         assert_eq!(embedding.len(), 1024);
     }
 
     #[pg_test]
     fn test_fireworks_embedding_length5() {
-        let embedding = _fireworks_text_embedding("thenlper/gte-base".to_string(), "hello world!".to_string(), &fireworks_api_key());
+        let embedding = _fireworks_text_embedding(
+            "thenlper/gte-base".to_string(),
+            "hello world!".to_string(),
+            &fireworks_api_key(),
+        );
         assert_eq!(embedding.len(), 768);
     }
 
