@@ -195,8 +195,8 @@ mod rag_jina_reranker_v1_tiny_en {
     use tonic::transport::{Endpoint, Uri};
     use tower::service_fn;
 
-    #[pg_extern(immutable, strict, name = "rerank_distance")]
-    pub fn rerank_distances(query: String, passages: Vec<String>) -> Vec<f32> {
+    #[pg_extern(immutable, strict, name = "rerank_score")]
+    pub fn rerank_scores(query: String, passages: Vec<String>) -> Vec<f32> {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -223,17 +223,32 @@ mod rag_jina_reranker_v1_tiny_en {
                     .await
                     .expect_or_pg_err("Worker process returned error");
 
-                // for distance, lower numbers mean more similarity, hence the minus sign
-                response.into_inner().scores.into_iter().map(|score| -score).collect()
+                response.into_inner().scores
             })
     }
 
     #[pg_extern(immutable, strict)]
-    pub fn rerank_distance(query: String, passage: String) -> f32 {
-        rerank_distances(query, vec![passage])
+    pub fn rerank_score(query: String, passage: String) -> f32 {
+        let scores = rerank_scores(query, vec![passage]);
+        scores
             .into_iter()
             .next()
             .unwrap_or_pg_err("No reranking scores returned")
+    }
+
+    #[pg_extern(immutable, strict, name = "rerank_distance")]
+    pub fn rerank_distances(query: String, passages: Vec<String>) -> Vec<f32> {
+        let scores = rerank_scores(query, passages);
+        scores.into_iter().map(|score| -score).collect()
+    }
+
+    #[pg_extern(immutable, strict)]
+    pub fn rerank_distance(query: String, passage: String) -> f32 {
+        let distances = rerank_distances(query, vec![passage]);
+        distances
+            .into_iter()
+            .next()
+            .unwrap_or_pg_err("No reranking distances returned")
     }
 }
 

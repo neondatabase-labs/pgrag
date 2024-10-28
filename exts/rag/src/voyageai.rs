@@ -71,32 +71,32 @@ mod rag {
                 IF api_key IS NULL THEN
                     RAISE EXCEPTION '[rag] Voyage AI API key is not set';
                 END IF;
-                SELECT rag._voyageai_embedding(model, input_type, input, api_key)::vector INTO res;
+                SELECT rag._voyageai_embedding(model, input_type::text, input, api_key)::vector INTO res;
                 RETURN res;
             END;
         $$;
 
-        CREATE FUNCTION rag.voyageai_embedding_3(model text, input_type rag.voyage_ai_input_type, input text) RETURNS vector
+        CREATE FUNCTION rag.voyageai_embedding_3(input_type rag.voyage_ai_input_type, input text) RETURNS vector
         LANGUAGE SQL IMMUTABLE AS $$
           SELECT rag.voyageai_embedding('voyage-3', input_type, input)::vector(1024);
         $$;
-        CREATE FUNCTION rag.voyageai_embedding_3_lite(model text, input_type rag.voyage_ai_input_type, input text) RETURNS vector
+        CREATE FUNCTION rag.voyageai_embedding_3_lite(input_type rag.voyage_ai_input_type, input text) RETURNS vector
         LANGUAGE SQL IMMUTABLE AS $$
           SELECT rag.voyageai_embedding('voyage-3-lite', input_type, input)::vector(512);
         $$;
-        CREATE FUNCTION rag.voyageai_embedding_finance_2(model text, input_type rag.voyage_ai_input_type, input text) RETURNS vector
+        CREATE FUNCTION rag.voyageai_embedding_finance_2(input_type rag.voyage_ai_input_type, input text) RETURNS vector
         LANGUAGE SQL IMMUTABLE AS $$
           SELECT rag.voyageai_embedding('voyage-finance-2', input_type, input)::vector(1024);
         $$;
-        CREATE FUNCTION rag.voyageai_embedding_multilingual_2(model text, input_type rag.voyage_ai_input_type, input text) RETURNS vector
+        CREATE FUNCTION rag.voyageai_embedding_multilingual_2(input_type rag.voyage_ai_input_type, input text) RETURNS vector
         LANGUAGE SQL IMMUTABLE AS $$
           SELECT rag.voyageai_embedding('voyage-multilingual-2', input_type, input)::vector(1024);
         $$;
-        CREATE FUNCTION rag.voyageai_embedding_law_2(model text, input_type rag.voyage_ai_input_type, input text) RETURNS vector
+        CREATE FUNCTION rag.voyageai_embedding_law_2(input_type rag.voyage_ai_input_type, input text) RETURNS vector
         LANGUAGE SQL IMMUTABLE AS $$
           SELECT rag.voyageai_embedding('voyage-law-2', input_type, input)::vector(1024);
         $$;
-        CREATE FUNCTION rag.voyageai_embedding_code_2(model text, input_type rag.voyage_ai_input_type, input text) RETURNS vector
+        CREATE FUNCTION rag.voyageai_embedding_code_2(input_type rag.voyage_ai_input_type, input text) RETURNS vector
         LANGUAGE SQL IMMUTABLE AS $$
           SELECT rag.voyageai_embedding('voyage-code-2', input_type, input)::vector(1536);
         $$;",
@@ -132,8 +132,14 @@ mod rag {
         let rerank_data: VoyageAIRerankingData =
             serde_json::from_value(json).expect_or_pg_err("Unexpected JSON structure in Voyage AI response");
         let mut reranks = rerank_data.data;
-        reranks.sort_by(|r1, r2| r1.index.cmp(&r2.index));  // return to input order
+        reranks.sort_by(|r1, r2| r1.index.cmp(&r2.index)); // return to input order
         reranks.into_iter().map(|rerank| rerank.relevance_score).collect()
+    }
+
+    #[pg_extern(immutable, strict)]
+    pub fn _voyageai_rerank_distances(model: String, query: String, documents: Vec<String>, key: &str) -> Vec<f32> {
+        let scores = _voyageai_rerank_scores(model, query, documents, key);
+        scores.into_iter().map(|score| -score).collect()
     }
 
     extension_sql!(
@@ -151,6 +157,10 @@ mod rag {
             END;
         $$;
         CREATE FUNCTION rag.voyageai_rerank_score(model text, query text, document text) RETURNS real
+        LANGUAGE SQL IMMUTABLE STRICT AS $$
+            SELECT (rag.voyageai_rerank_score(model, query, ARRAY[document]))[1];
+        $$;
+        CREATE FUNCTION rag.voyageai_rerank_distance(model text, query text, documents text[]) RETURNS real[]
         LANGUAGE PLPGSQL IMMUTABLE STRICT AS $$
             DECLARE
                 api_key text := rag.voyageai_get_api_key();
@@ -159,11 +169,14 @@ mod rag {
                 IF api_key IS NULL THEN
                     RAISE EXCEPTION '[rag] Voyage AI API key is not set';
                 END IF;
-                SELECT rag._voyageai_rerank_scores(model, query, ARRAY[document], api_key) INTO res;
-                RETURN res[1];
+                SELECT rag._voyageai_rerank_distances(model, query, documents, api_key) INTO res;
+                RETURN res;
             END;
         $$;
-        ",
+        CREATE FUNCTION rag.voyageai_rerank_distance(model text, query text, document text) RETURNS real
+        LANGUAGE SQL IMMUTABLE STRICT AS $$
+            SELECT (rag.voyageai_rerank_distance(model, query, ARRAY[document]))[1];
+        $$;",
         name = "voyageai_reranking"
     );
 }
@@ -280,16 +293,15 @@ mod tests {
     /* note that Voyage reranking scores do not appear to be stable, but depend on context -- for example:
 
     rag=# select rag.voyageai_rerank_score('rerank-2-lite', 'my dad came home with a fluffy pet', ARRAY['dad brought us a dog', 'dad brought us a cat', 'i called in sick']);
-        voyageai_rerank_score      
+        voyageai_rerank_score
     --------------------------------
     {0.6015625,0.59375,0.47265625}
     (1 row)
 
     rag=# select rag.voyageai_rerank_score('rerank-2-lite', 'my dad came home with a fluffy pet', ARRAY['dad brought us a dog', 'dad brought us a cat', 'the warhead was launched over the ocean']);
-        voyageai_rerank_score      
+        voyageai_rerank_score
     ---------------------------------
     {0.59765625,0.59375,0.51171875}
     (1 row)
     */
-
 }
