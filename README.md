@@ -104,22 +104,24 @@ The `ort` package supplies precompiled binaries for the ONNX runtime (currently 
 
 #### Remote ONNX model file
 
-By default, the embedding and reranking models are embedded within the extension (using Rust's `include_bytes!()` macro). But it's also possible to have these `.onnx` files downloaded on first use. This is enabled by the `remote_onnx` crate feature, and the download URL is specified via the `REMOTE_ONNX_URL` build-time environment variable. For example:
+By default, the embedding and reranking model data are embedded within the extension, using Rust's `include_bytes!()` macro. Alternatively, it's possible to have the `.onnx` files downloaded on first use (since the last Postgres restart). This is enabled by the `remote_onnx` crate feature, and the download URL is specified via the `REMOTE_ONNX_URL` build-time environment variable. For example:
 
 ```bash
 REMOTE_ONNX_URL=http://example.com/path/model.onnx cargo pgrx install --release --features remote_onnx
 ```
 
-`REMOTE_ONNX_URL` defaults to a HuggingFace URL, but it is recommended to change this to a location you control.
+The `REMOTE_ONNX_URL` variable defaults to a HuggingFace URL, but it is strongly recommended to change this to a location you control.
 
 
 ## Usage
 
 ```sql
-create extension if not exists rag cascade;  -- `cascade` installs pgvector dependency
+create extension if not exists rag cascade;
 create extension if not exists rag_bge_small_en_v15 cascade; 
 create extension if not exists rag_jina_reranker_v1_tiny_en cascade; 
 ```
+
+The three extensions have no dependencies on each other, but all are dependent on pgvector. Specify `cascade` to ensure pgvector is installed alongside them.
 
 
 #### `markdown_from_html(text) -> text`
@@ -215,13 +217,12 @@ select rag.openai_get_api_key();
 -- 'sk-proj-...'
 ```
 
-
+#### `openai_text_embedding(model text, text) -> vector`
 #### `openai_text_embedding_3_small(text) -> vector(1536)`
 #### `openai_text_embedding_3_large(text) -> vector(3072)`
 #### `openai_text_embedding_ada_002(text) -> vector(1536)`
-#### `openai_text_embedding(model text, text) -> vector`
 
-Call out to OpenAI embeddings API (makes network request):
+Call out to OpenAI embeddings API (making network request):
 
 ```sql
 select rag.openai_text_embedding_3_small('The quick brown fox jumps over the lazy dog');
@@ -231,7 +232,7 @@ select rag.openai_text_embedding_3_small('The quick brown fox jumps over the laz
 
 #### `openai_chat_completion(json) -> json`
 
-Call out to OpenAI chat/completions API (makes network request):
+Call out to OpenAI chat/completions API (making network request):
 
 ```sql
 select rag.openai_chat_completion('{"model":"gpt-4o-mini","messages":[{"role":"system","content":"you are a helpful assistant"},{"role":"user","content":"hi!"}]}');
@@ -250,6 +251,17 @@ select rag.fireworks_get_api_key();
 -- 'fw_...'
 ```
 
+#### `fireworks_nomic_embed_text_v15(text) -> vector(768)`
+#### `fireworks_nomic_embed_text_v1(text) -> vector(768)`
+#### `fireworks_text_embedding_whereisai_uae_large_v1(text) -> vector(1024)`
+#### `fireworks_text_embedding_thenlper_gte_large(text) -> vector(1024)`
+#### `fireworks_text_embedding_thenlper_gte_base(text) -> vector(768)`
+#### `fireworks_text_embedding(model text, input text) -> vector`
+
+```sql
+select rag.fireworks_nomic_embed_text_v15('The quick brown fox jumps over the lazy dog');
+--
+```
 
 #### `fireworks_chat_completion(json) -> json`
 
@@ -259,6 +271,7 @@ Call out to Fireworks.ai chat/completions API (makes network request):
 select rag.fireworks_chat_completion('{"model":"accounts/fireworks/models/llama-v3p1-8b-instruct","messages":[{"role":"system","content":"you are a helpful assistant"},{"role":"user","content":"hi!"}]}');
 --  {"choices":[{"finish_reason":"stop","index":0,"message":{"content":"Hi! How can I assist you today?","role":"assistant"}}],"created":1725362940,"id":"...","model":"accounts/fireworks/models/llama-v3p1-8b-instruct","object":"chat.completion","usage":{"completion_tokens":10,"prompt_tokens":23,"total_tokens":33}}
 ```
+
 
 
 ## End-to-end RAG example
