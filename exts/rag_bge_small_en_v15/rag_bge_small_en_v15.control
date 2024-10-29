@@ -1,4 +1,4 @@
-comment = 'rag_bge_small_en_v15: Created by pgrx'
+comment = 'In-database embeddings generation using model bge-small-en-v1.5: https://github.com/neondatabase-labs/pgrag'
 default_version = '@CARGO_VERSION@'
 module_pathname = '$libdir/rag_bge_small_en_v15'
 relocatable = false

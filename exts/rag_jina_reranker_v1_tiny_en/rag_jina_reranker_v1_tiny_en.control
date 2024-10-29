@@ -1,4 +1,4 @@
-comment = 'rag_jina_reranker_v1_tiny_en: Created by pgrx'
+comment = 'In-database reranking using model jina-reranker-v1-tiny-en: https://github.com/neondatabase-labs/pgrag'
 default_version = '@CARGO_VERSION@'
 module_pathname = '$libdir/rag_jina_reranker_v1_tiny_en'
 relocatable = false

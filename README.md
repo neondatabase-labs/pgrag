@@ -191,7 +191,9 @@ select rag_bge_small_en_v15.embedding_for_query('What did the quick brown fox ju
 #### `rerank_distance(text, text) -> real`
 #### `rerank_distance(text, text[]) -> real[]`
 
-Locally tokenize + rerank original texts using a small (33M param) model. In each case `distance` is equal to `-score`.
+Locally tokenize + calculate reranking scores for original texts using a small (33M param) model.
+
+In each case `distance` is equal to `-score`. If multiple texts are provided in the second argument, scores or distances are returned in matching order.
 
 ```sql
 select rag_jina_reranker_v1_tiny_en.rerank_distance('The quick brown fox jumps over the lazy dog', 'What did the quick brown fox jump over?');

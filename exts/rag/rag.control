@@ -1,4 +1,4 @@
-comment = 'rag: Created by pgrx'
+comment = 'Tools to support Retrieval-Augmented Generation: https://github.com/neondatabase-labs/pgrag'
 default_version = '@CARGO_VERSION@'
 module_pathname = '$libdir/rag'
 relocatable = false
