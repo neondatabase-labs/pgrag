@@ -7,34 +7,40 @@ These currently provide:
 
 ### Text extraction and conversion
 
-* Simple text extraction from PDF documents using [pdf-extract](https://github.com/jrmuizel/pdf-extract). Currently no OCR, and no support for complex layout or formatting.
+* Simple text extraction from PDF documents (using [pdf-extract](https://github.com/jrmuizel/pdf-extract)). Currently no OCR and no support for complex layout or formatting.
 
-* Simple text extraction from .docx documents using [docx-rs](https://github.com/cstkingkey/docx-rs) (docx-rust). Currently no support for complex layout or formatting.
+* Simple text extraction from .docx documents (using [docx-rs](https://github.com/cstkingkey/docx-rs)).
 
-* HTML conversion to Markdown using [htmd](https://github.com/letmutex/htmd).
+* HTML conversion to Markdown (using [htmd](https://github.com/letmutex/htmd)).
 
 
 ### Text chunking
 
-* Text chunking by character count using [text-splitter](https://github.com/benbrandt/text-splitter).
+* Text chunking by character count (using [text-splitter](https://github.com/benbrandt/text-splitter)).
 
-* Text chunking by token count, again using [text-splitter](https://github.com/benbrandt/text-splitter).
+* Text chunking by token count (also using [text-splitter](https://github.com/benbrandt/text-splitter)).
 
 
 ### Local embedding and reranking models
 
-These are packaged as separate extensions, because they are large (>100MB) and because we may want to add others in future.
+These models run locally on the Postgres server's CPU or GPU. They are packaged as separate extensions, because they are large (>100MB) and because we may want to add others in future.
 
-* Local tokenising + embedding generation with 33M parameter model [bge-small-en-v1.5](https://huggingface.co/Xenova/bge-small-en-v1.5) using [fastembed](https://github.com/Anush008/fastembed-rs).
+* Local tokenising + embedding generation with 33M parameter model [bge-small-en-v1.5](https://huggingface.co/Xenova/bge-small-en-v1.5) (using [ort](https://github.com/pykeio/ort) via [fastembed](https://github.com/Anush008/fastembed-rs)).
 
-* Local tokenising + reranking with 33M parameter model [jina-reranker-v1-tiny-en](https://huggingface.co/jinaai/jina-reranker-v1-tiny-en) using [fastembed](https://github.com/Anush008/fastembed-rs).
+* Local tokenising + reranking with 33M parameter model [jina-reranker-v1-tiny-en](https://huggingface.co/jinaai/jina-reranker-v1-tiny-en) (also using [ort](https://github.com/pykeio/ort) via [fastembed](https://github.com/Anush008/fastembed-rs)).
 
 
 ### Remote embedding and chat models
 
-* Querying OpenAI API for embeddings (e.g. `text-embedding-3-small`) and chat completions (e.g. `gpt-4o-mini`).
+The extension calls out to these models over HTTPS/JSON APIs.
 
-* Querying Fireworks.ai API for chat completions (e.g. `llama-v3p1-8b-instruct`).
+* OpenAI API for embeddings (e.g. `text-embedding-3-small`) and chat completions (e.g. `gpt-4o-mini`).
+
+* Anthropic API for chat completions (e.g. `claude-3-haiku-20240307`).
+
+* Fireworks.ai API for embeddings (e.g. `nomic-ai/nomic-embed-text-v1.5`) and chat completions (e.g. `llama-v3p1-8b-instruct`).
+
+* Voyage AI API for embeddings (e.g. `voyage-multilingual-2`) and reranking (e.g. `rerank-2-lite`).
 
 
 ## Installation
@@ -50,7 +56,7 @@ make
 make install  # may need sudo
 ```
 
-Next, download the extensions source, and (if you are building the embedding or reranking extensions) extract the relevant model files:
+Next, download the extensions source, and (if you are building the embedding or reranking extensions with baked-in model data) extract the relevant model files:
 
 ```bash
 cd lib/bge_small_en_v15 && tar xzf model.onnx.tar.gz && cd ../..
@@ -69,7 +75,7 @@ Finally, inside each of the three folders inside `exts`:
 PG_CONFIG=/path/to/pg_config cargo pgrx install --release
 ```
 
-The extension has been tested on Linux and macOS. It does not currently support Windows.
+The extension has been tested on Linux and macOS. pgrx does not currently support Windows.
 
 
 ### Embedding and reranking extensions
@@ -92,7 +98,7 @@ When using `cargo pgrx test`, `postgresql.conf` is inside the `target` directory
 
 #### ORT and ONNX installation
 
-The `ort` and `ort-sys` crates are currently supplied in patched form in `vendor`, otherwise `ort` and `ort-sys` versions end up mismatched, and that leads to build failures. We stick at `2.0.0-rc.4` (by keeping `fastembed` at `=3.14.1`) because this is the last version using the ONNX Runtime at `1.18`, and `1.19` has build some build problems.
+The `ort` and `ort-sys` crates are currently supplied in patched form in `vendor`, otherwise `ort` and `ort-sys` versions end up mismatched, and that leads to build failures. We stick at `2.0.0-rc.4` (by keeping `fastembed` at `=3.14.1`) because this is the last version using the ONNX Runtime at `1.18`, and `1.19` has build problems on some platforms at the time of writing.
 
 The `ort` package supplies precompiled binaries for the ONNX runtime (currently v1.18). On some platforms, this may give rise to `undefined symbol` errors. In that case, you'll need to compile the ONNX runtime yourself and provide the build location to `cargo pgrx install` in the `ORT_LIB_LOCATION` environment variable. An example for Ubuntu 24.04 is provided in [COMPILE.sh](COMPILE.sh).
 
@@ -168,7 +174,8 @@ select rag_bge_small_en_v15.chunks_by_token_count('The quick brown fox jumps ove
 ```
 
 
-#### `embedding_for_passage(text) -> vector(384)` and `embedding_for_query(text) -> vector(384)`
+#### `embedding_for_passage(text) -> vector(384)`
+#### `embedding_for_query(text) -> vector(384)`
 
 Locally tokenize + generate embeddings using a small (33M param) model:
 
@@ -179,10 +186,12 @@ select rag_bge_small_en_v15.embedding_for_query('What did the quick brown fox ju
 -- [-0.09328926,-0.030567117,-0.027558783, ...]
 ```
 
-
+#### `rerank_score(text, text) -> real`
+#### `rerank_score(text, text[]) -> real[]`
 #### `rerank_distance(text, text) -> real`
+#### `rerank_distance(text, text[]) -> real[]`
 
-Locally tokenize + rerank original texts using a small (33M param) model:
+Locally tokenize + rerank original texts using a small (33M param) model. In each case `distance` is equal to `-score`.
 
 ```sql
 select rag_jina_reranker_v1_tiny_en.rerank_distance('The quick brown fox jumps over the lazy dog', 'What did the quick brown fox jump over?');
@@ -193,7 +202,8 @@ select rag_jina_reranker_v1_tiny_en.rerank_distance('The quick brown fox jumps o
 ```
 
 
-#### `openai_set_api_key(text)` and `openai_get_api_key() -> text`
+#### `openai_set_api_key(text)`
+#### `openai_get_api_key() -> text`
 
 Store and retrieve your OpenAI API key:
 
@@ -204,7 +214,10 @@ select rag.openai_get_api_key();
 ```
 
 
-#### `openai_text_embedding_3_small(text) -> vector(1536)`, `openai_text_embedding_3_large(text) -> vector(3072)`, `openai_text_embedding_ada_002(text) -> vector(1536)`, and `openai_text_embedding(model text, text) -> vector`
+#### `openai_text_embedding_3_small(text) -> vector(1536)`
+#### `openai_text_embedding_3_large(text) -> vector(3072)`
+#### `openai_text_embedding_ada_002(text) -> vector(1536)`
+#### `openai_text_embedding(model text, text) -> vector`
 
 Call out to OpenAI embeddings API (makes network request):
 
@@ -224,7 +237,8 @@ select rag.openai_chat_completion('{"model":"gpt-4o-mini","messages":[{"role":"s
 ```
 
 
-#### `fireworks_set_api_key(text)` and `fireworks_get_api_key() -> text`
+#### `fireworks_set_api_key(text)`
+#### `fireworks_get_api_key() -> text`
 
 Store and retrieve your Fireworks.ai API key:
 
