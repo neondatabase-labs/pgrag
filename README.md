@@ -226,7 +226,7 @@ Call out to OpenAI embeddings API (making network request):
 
 ```sql
 select rag.openai_text_embedding_3_small('The quick brown fox jumps over the lazy dog');
--- {-0.020836005,-0.016921125,-0.00450666, ...}
+-- [-0.020836005,-0.016921125,-0.00450666, ...]
 ```
 
 
@@ -235,8 +235,45 @@ select rag.openai_text_embedding_3_small('The quick brown fox jumps over the laz
 Call out to OpenAI chat/completions API (making network request):
 
 ```sql
-select rag.openai_chat_completion('{"model":"gpt-4o-mini","messages":[{"role":"system","content":"you are a helpful assistant"},{"role":"user","content":"hi!"}]}');
+select rag.openai_chat_completion('{
+  "model": "gpt-4o-mini",
+  "messages":[
+    {"role": "system", "content": "you are a helpful assistant"},
+    {"role": "user", "content": "hi!"}
+  ]
+}'::json);
 -- {"id": "chatcmpl-...", "model": "gpt-4o-mini-2024-07-18", "usage": {"total_tokens": 27, "prompt_tokens": 18, "completion_tokens": 9}, "object": "chat.completion", "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hello! How can I assist you today?", "refusal": null}, "logprobs": null, "finish_reason": "stop"}], "created": 1724765541, "system_fingerprint": "fp_..."}
+```
+
+
+#### `anthropic_set_api_key(text)`
+#### `anthropic_get_api_key() -> text`
+
+Store and retrieve your Anthropic API key:
+
+```sql
+select rag.anthropic_set_api_key('sk-ant-api...');
+select rag.anthropic_get_api_key();
+-- 'sk-ant-api...'
+```
+
+#### `anthropic_messages(version text, body json) -> json`
+
+Call out to Anthropic messages (i.e. chat/completions) API (making network request):
+
+```sql
+select rag.anthropic_messages('2023-06-01', '{
+  "model": "claude-3-haiku-20240307",
+  "max_tokens": 64,
+  "system": "you are a helpful assistant",
+  "messages":[
+    {
+      "role": "user",
+      "content": "hi!"
+    }
+  ]
+}'::json);
+--  {"content":[{"text":"Hello! How can I assist you today?","type":"text"}],"id":"msg_...","model":"claude-3-haiku-20240307","role":"assistant","stop_reason":"end_turn","stop_sequence":null,"type":"message","usage":{"input_tokens":14,"output_tokens":19}}
 ```
 
 
@@ -260,7 +297,7 @@ select rag.fireworks_get_api_key();
 
 ```sql
 select rag.fireworks_nomic_embed_text_v15('The quick brown fox jumps over the lazy dog');
---
+-- [-0.012481689,0.026031494,-0.15270996, ...]
 ```
 
 #### `fireworks_chat_completion(json) -> json`
@@ -272,6 +309,48 @@ select rag.fireworks_chat_completion('{"model":"accounts/fireworks/models/llama-
 --  {"choices":[{"finish_reason":"stop","index":0,"message":{"content":"Hi! How can I assist you today?","role":"assistant"}}],"created":1725362940,"id":"...","model":"accounts/fireworks/models/llama-v3p1-8b-instruct","object":"chat.completion","usage":{"completion_tokens":10,"prompt_tokens":23,"total_tokens":33}}
 ```
 
+
+#### `voyageai_set_api_key(text)`
+#### `voyageai_get_api_key() -> text`
+
+Store and retrieve your Voyage AI API key:
+
+```sql
+select rag.voyageai_set_api_key('pa-...');
+select rag.voyageai_get_api_key();
+-- 'pa-...'
+```
+
+#### `voyageai_embedding(model text, input_type, text) -> vector`
+#### `voyageai_embedding_3(input_type, text) -> vector(1024)`
+#### `voyageai_embedding_3_lite(input_type, text) -> vector(512)`
+#### `voyageai_embedding_code_2(input_type, text) -> vector(1536)`
+#### `voyageai_embedding_finance_2(input_type, text) -> vector(1024)`
+#### `voyageai_embedding_law_2(input_type, text) -> vector(1024)`
+#### `voyageai_embedding_multilingual_2(input_type, text) -> vector(1024)`
+
+Call out to Voyage AI embeddings API (making network request).
+
+`input_type` may be `'query'` or `'document'` (or `NULL`):
+
+```sql
+select rag.voyageai_embedding_3_lite('document', 'the cat sat on the mat');
+-- [-0.033761546,0.01360899,0.0832813, ...]
+```
+
+#### `voyageai_rerank_score(model text, query text, document text) -> real`
+#### `voyageai_rerank_score(model text, query text, documents text[]) -> real[]`
+#### `voyageai_rerank_distance(model text, query text, document text) -> real`
+#### `voyageai_rerank_distance(model text, query text, documents text[]) -> real[]`
+
+Call out to Voyage AI reranking model (making network request). 
+
+In each case `distance` is equal to `-score`. If multiple texts are provided in the second argument, scores or distances are returned in matching order.
+
+```sql
+select rag.voyageai_rerank_distance('rerank-2-lite', 'the cat sat on the mat', ARRAY['the baboon played with the balloon', 'how much wood would a woodchuck chuck?']);
+-- {-0.5,-0.4609375}
+```
 
 
 ## End-to-end RAG example
