@@ -295,6 +295,8 @@ select rag.fireworks_get_api_key();
 #### `fireworks_text_embedding_thenlper_gte_base(text) -> vector(768)`
 #### `fireworks_text_embedding(model text, input text) -> vector`
 
+Call out to Fireworks.ai embeddings API (making network request):
+
 ```sql
 select rag.fireworks_nomic_embed_text_v15('The quick brown fox jumps over the lazy dog');
 -- [-0.012481689,0.026031494,-0.15270996, ...]
@@ -305,7 +307,13 @@ select rag.fireworks_nomic_embed_text_v15('The quick brown fox jumps over the la
 Call out to Fireworks.ai chat/completions API (makes network request):
 
 ```sql
-select rag.fireworks_chat_completion('{"model":"accounts/fireworks/models/llama-v3p1-8b-instruct","messages":[{"role":"system","content":"you are a helpful assistant"},{"role":"user","content":"hi!"}]}');
+select rag.fireworks_chat_completion('{
+  "model": "accounts/fireworks/models/llama-v3p1-8b-instruct",
+  "messages":[
+    {"role": "system", "content": "you are a helpful assistant"},
+    {"role": "user", "content": "hi!"}
+  ]
+}'::json);
 --  {"choices":[{"finish_reason":"stop","index":0,"message":{"content":"Hi! How can I assist you today?","role":"assistant"}}],"created":1725362940,"id":"...","model":"accounts/fireworks/models/llama-v3p1-8b-instruct","object":"chat.completion","usage":{"completion_tokens":10,"prompt_tokens":23,"total_tokens":33}}
 ```
 
@@ -426,8 +434,7 @@ with ranked as (
   select
     id, doc_id, chunk, embedding <=> rag_bge_small_en_v15.embedding_for_query(:'query') as cosine_distance
   from embeddings
-  order by cosine_distance
-  limit 10
+  order by cosine_distance limit 10
 ),
 reranked as (
   select *, rag_jina_reranker_v1_tiny_en.rerank_distance(:'query', chunk)
