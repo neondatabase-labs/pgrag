@@ -54,6 +54,7 @@ pub extern "C" fn _PG_init() {
         .set_function("background_main")
         .set_library(ext_name!())
         .set_argument(pid.into_datum())
+        .set_restart_time(Some(Duration::from_secs(1)))
         .enable_spi_access()
         .load();
 }
