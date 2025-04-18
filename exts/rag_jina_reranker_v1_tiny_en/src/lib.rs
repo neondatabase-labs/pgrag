@@ -22,6 +22,10 @@ use tokio::{
 use tokio_stream::wrappers::UnixListenerStream;
 use tonic::{transport::Server, Request, Response, Status};
 
+include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+
+const _CHECK_SIG: unsafe extern "C" fn() -> bool = PostmasterIsAliveInternal;
+
 // macros
 
 mconst!(ext_name, "rag_jina_reranker_v1_tiny_en");
@@ -170,7 +174,7 @@ pub extern "C" fn background_main(arg: pg_sys::Datum) {
             Server::builder()
                 .add_service(RerankerServer::new(reranker))
                 .serve_with_incoming_shutdown(uds_stream, async {
-                    while !BackgroundWorker::sigterm_received() {
+                    while !BackgroundWorker::sigterm_received() && unsafe { PostmasterIsAliveInternal() } {
                         sleep(Duration::from_millis(500)).await;
                     }
                 })
