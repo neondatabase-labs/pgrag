@@ -23,6 +23,12 @@ use tokio::{
 use tokio_stream::wrappers::UnixListenerStream;
 use tonic::{transport::Server, Request, Response, Status};
 
+use pgrx::prelude::*;
+
+extern "C" {
+    pub fn PostmasterIsAliveInternal() -> bool;
+}
+
 // macros
 
 mconst!(ext_name, "rag_bge_small_en_v15");
@@ -166,7 +172,7 @@ pub extern "C" fn background_main(arg: pg_sys::Datum) {
             Server::builder()
                 .add_service(EmbeddingGeneratorServer::new(embedder))
                 .serve_with_incoming_shutdown(uds_stream, async {
-                    while !BackgroundWorker::sigterm_received() {
+                    while !BackgroundWorker::sigterm_received() && unsafe { PostmasterIsAliveInternal() } {
                         sleep(Duration::from_millis(500)).await;
                     }
                 })
