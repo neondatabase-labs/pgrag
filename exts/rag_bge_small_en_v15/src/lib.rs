@@ -1,5 +1,6 @@
 mod chunk;
 mod errors;
+
 mod embeddings {
     tonic::include_proto!("embeddings");
 }
@@ -22,6 +23,10 @@ use tokio::{
 };
 use tokio_stream::wrappers::UnixListenerStream;
 use tonic::{transport::Server, Request, Response, Status};
+
+include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+
+const _CHECK_SIG: unsafe extern "C" fn() -> bool = PostmasterIsAliveInternal;
 
 // macros
 
@@ -166,7 +171,7 @@ pub extern "C" fn background_main(arg: pg_sys::Datum) {
             Server::builder()
                 .add_service(EmbeddingGeneratorServer::new(embedder))
                 .serve_with_incoming_shutdown(uds_stream, async {
-                    while !BackgroundWorker::sigterm_received() {
+                    while !BackgroundWorker::sigterm_received() && unsafe { PostmasterIsAliveInternal() } {
                         sleep(Duration::from_millis(500)).await;
                     }
                 })
