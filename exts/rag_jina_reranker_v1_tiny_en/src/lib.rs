@@ -138,6 +138,7 @@ pub extern "C" fn background_main(arg: pg_sys::Datum) {
     let name = BackgroundWorker::get_name();
     log!("{ERR_PREFIX} {name} started, received PID {pid}");
 
+    BackgroundWorker::attach_signal_handlers(SignalWakeFlags::SIGTERM);
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -169,13 +170,25 @@ pub extern "C" fn background_main(arg: pg_sys::Datum) {
             Server::builder()
                 .add_service(RerankerServer::new(reranker))
                 .serve_with_incoming_shutdown(uds_stream, async {
-                    unsafe {
-                        pg_sys::WaitLatch(
-                                std::ptr::null_mut(),
-                                pg_sys::WL_EXIT_ON_PM_DEATH as i32,  // no WL_LATCH_SET
+                    while !BackgroundWorker::sigterm_received() {
+                        unsafe {
+                            let mask = pg_sys::WL_EXIT_ON_PM_DEATH | pg_sys::WL_LATCH_SET;
+                            let my_latch = unsafe {
+                                &mut (*pg_sys::MyProc).procLatch as *mut pg_sys::Latch
+                            };
+                            let events = pg_sys::WaitLatch(
+                                my_latch,
+                                mask as i32,
                                 0,
                                 pg_sys::PG_WAIT_EXTENSION,
-                        );
+                            );
+                            pg_sys::ResetLatch(my_latch);
+
+                            if (events & pg_sys::WL_EXIT_ON_PM_DEATH as i32) != 0 {
+                                // postmaster died
+                                pg_sys::proc_exit(1);
+                            }
+                        }
                     }
                 })
                 .await
