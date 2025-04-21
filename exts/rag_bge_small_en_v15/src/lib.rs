@@ -169,9 +169,7 @@ pub extern "C" fn background_main(arg: pg_sys::Datum) {
                     while !BackgroundWorker::sigterm_received() {
                         unsafe {
                             let mask = pg_sys::WL_EXIT_ON_PM_DEATH | pg_sys::WL_LATCH_SET;
-                            let my_latch = unsafe {
-                                &mut (*pg_sys::MyProc).procLatch as *mut pg_sys::Latch
-                            };
+                            let my_latch = &mut (*pg_sys::MyProc).procLatch as *mut pg_sys::Latch;
                             let events = pg_sys::WaitLatch(
                                 my_latch,
                                 mask as i32,
