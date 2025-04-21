@@ -18,7 +18,7 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::{fs, os::unix::fs::PermissionsExt, sync::OnceLock};
 use tokio::{
     net::UnixListener,
-    time::{sleep, Duration},
+    time::Duration,
 };
 use tokio_stream::wrappers::UnixListenerStream;
 use tonic::{transport::Server, Request, Response, Status};
@@ -134,7 +134,6 @@ pub extern "C" fn background_main(arg: pg_sys::Datum) {
     let name = BackgroundWorker::get_name();
     log!("{ERR_PREFIX} {name} started, received PID {pid}");
 
-    BackgroundWorker::attach_signal_handlers(SignalWakeFlags::SIGTERM);
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -166,8 +165,13 @@ pub extern "C" fn background_main(arg: pg_sys::Datum) {
             Server::builder()
                 .add_service(EmbeddingGeneratorServer::new(embedder))
                 .serve_with_incoming_shutdown(uds_stream, async {
-                    while !BackgroundWorker::sigterm_received() {
-                        sleep(Duration::from_millis(500)).await;
+                    unsafe {
+                        pg_sys::WaitLatch(
+                            std::ptr::null_mut(),
+                            pg_sys::WL_EXIT_ON_PM_DEATH as i32,  // no WL_LATCH_SET
+                            0,
+                            pg_sys::PG_WAIT_EXTENSION,
+                        );
                     }
                 })
                 .await
