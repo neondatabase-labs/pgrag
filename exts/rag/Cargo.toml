@@ -23,7 +23,7 @@ pg_test = []
 docx-rust = "0.1.8"
 htmd = "0.1.6"
 pdf-extract = "0.7.7"
-pgrx = version = "0.14.1"
+pgrx = "0.14.1"
 serde = "1.0.209"
 serde_json = "1.0.120"
 text-splitter = { version = "0.14.1" }
