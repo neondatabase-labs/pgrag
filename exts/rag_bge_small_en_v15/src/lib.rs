@@ -45,7 +45,7 @@ static PID: OnceLock<i64> = OnceLock::new();
 static TEXT_EMBEDDING: tokio::sync::OnceCell<TextEmbedding> = tokio::sync::OnceCell::const_new();
 
 #[pg_guard]
-pub extern "C" fn _PG_init() {
+pub extern "C-unwind" fn _PG_init() {
     let pid = std::process::id() as i64;
     PID.set(pid)
         .expect_or_pg_err("Impossible concurrent access to set PID value");
@@ -129,7 +129,7 @@ impl EmbeddingGenerator for EmbeddingGeneratorStruct {
 
 #[pg_guard]
 #[no_mangle]
-pub extern "C" fn background_main(arg: pg_sys::Datum) {
+pub extern "C-unwind" fn background_main(arg: pg_sys::Datum) {
     let pid = unsafe { i64::from_polymorphic_datum(arg, false, pg_sys::INT8OID).unwrap_or_pg_err("No PID received") };
     let name = BackgroundWorker::get_name();
     log!("{ERR_PREFIX} {name} started, received PID {pid}");
