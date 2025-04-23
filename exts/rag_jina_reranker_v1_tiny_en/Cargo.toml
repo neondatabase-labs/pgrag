@@ -22,7 +22,7 @@ remote_onnx = []
 
 [dependencies]
 fastembed = "=3.14.1"
-pgrx = version = "0.14.1"
+pgrx = "0.14.1"
 tonic = "0.12.3"
 prost = "0.13.3"
 tokio = "1.40.0"
