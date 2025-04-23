@@ -66,7 +66,7 @@ cd lib/jina_reranker_v1_tiny_en && tar xzf model.onnx.tar.gz && cd ../..
 Then (with up-to-date Rust installed):
 
 ```bash
-cargo install --locked cargo-pgrx@0.12.6
+cargo install --locked cargo-pgrx@0.14.1
 ```
 
 Finally, inside each of the three folders inside `exts`:
