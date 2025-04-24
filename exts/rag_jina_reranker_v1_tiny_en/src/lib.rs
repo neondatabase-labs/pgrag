@@ -17,7 +17,7 @@ use reranking::{
 use std::{fs, os::unix::fs::PermissionsExt, sync::OnceLock};
 use tokio::{
     net::UnixListener,
-    time::{sleep, Duration},
+    time::Duration,
 };
 use tokio_stream::wrappers::UnixListenerStream;
 use tonic::{transport::Server, Request, Response, Status};
@@ -171,7 +171,22 @@ pub extern "C-unwind" fn background_main(arg: pg_sys::Datum) {
                 .add_service(RerankerServer::new(reranker))
                 .serve_with_incoming_shutdown(uds_stream, async {
                     while !BackgroundWorker::sigterm_received() {
-                        sleep(Duration::from_millis(500)).await;
+                        unsafe {
+                            let mask = pg_sys::WL_EXIT_ON_PM_DEATH | pg_sys::WL_LATCH_SET;
+                            let my_latch = &mut (*pg_sys::MyProc).procLatch as *mut pg_sys::Latch;
+                            let events = pg_sys::WaitLatch(
+                                my_latch,
+                                mask as i32,
+                                0,
+                                pg_sys::PG_WAIT_EXTENSION,
+                            );
+                            pg_sys::ResetLatch(my_latch);
+
+                            if (events & pg_sys::WL_EXIT_ON_PM_DEATH as i32) != 0 {
+                                // postmaster died
+                                pg_sys::proc_exit(1);
+                            }
+                        }
                     }
                 })
                 .await
