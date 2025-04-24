@@ -166,7 +166,7 @@ pub extern "C-unwind" fn background_main(arg: pg_sys::Datum) {
             Server::builder()
                 .add_service(EmbeddingGeneratorServer::new(embedder))
                 .serve_with_incoming_shutdown(uds_stream, async {
-                    while !BackgroundWorker::sigterm_received() {
+                    while BackgroundWorker::wait_latch(None) {
                         sleep(Duration::from_millis(500)).await;
                     }
                 })
