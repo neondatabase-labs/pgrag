@@ -18,7 +18,7 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::{fs, os::unix::fs::PermissionsExt, sync::OnceLock};
 use tokio::{
     net::UnixListener,
-    time::{sleep, Duration},
+    time::Duration,
 };
 use tokio_stream::wrappers::UnixListenerStream;
 use tonic::{transport::Server, Request, Response, Status};
@@ -167,7 +167,6 @@ pub extern "C-unwind" fn background_main(arg: pg_sys::Datum) {
                 .add_service(EmbeddingGeneratorServer::new(embedder))
                 .serve_with_incoming_shutdown(uds_stream, async {
                     while BackgroundWorker::wait_latch(None) {
-                        sleep(Duration::from_millis(500)).await;
                     }
                 })
                 .await
