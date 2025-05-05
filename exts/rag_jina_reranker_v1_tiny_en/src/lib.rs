@@ -17,7 +17,7 @@ use reranking::{
 use std::{fs, os::unix::fs::PermissionsExt, sync::OnceLock};
 use tokio::{
     net::UnixListener,
-    time::Duration,
+    time::{sleep, Duration},
 };
 use tokio_stream::wrappers::UnixListenerStream;
 use tonic::{transport::Server, Request, Response, Status};
@@ -170,7 +170,8 @@ pub extern "C-unwind" fn background_main(arg: pg_sys::Datum) {
             Server::builder()
                 .add_service(RerankerServer::new(reranker))
                 .serve_with_incoming_shutdown(uds_stream, async {
-                    while BackgroundWorker::wait_latch(None) {
+                    while BackgroundWorker::wait_latch(Some(Duration::from_secs(0))) {
+                        sleep(Duration::from_millis(500)).await;
                     }
                 })
                 .await
