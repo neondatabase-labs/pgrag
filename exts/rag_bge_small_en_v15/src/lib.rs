@@ -166,6 +166,7 @@ pub extern "C-unwind" fn background_main(arg: pg_sys::Datum) {
             Server::builder()
                 .add_service(EmbeddingGeneratorServer::new(embedder))
                 .serve_with_incoming_shutdown(uds_stream, async {
+                    // wait_latch is not an async function and does not suspend
                     while BackgroundWorker::wait_latch(Some(Duration::from_secs(0))) {
                         // suspend so that other asyncs/threads can run
                         sleep(Duration::from_millis(500)).await;
