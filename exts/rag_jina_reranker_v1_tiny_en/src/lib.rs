@@ -22,6 +22,8 @@ use tokio::{
 use tokio_stream::wrappers::UnixListenerStream;
 use tonic::{transport::Server, Request, Response, Status};
 
+use nix::sys::signal::{self, Signal};
+
 // macros
 
 mconst!(ext_name, "rag_jina_reranker_v1_tiny_en");
@@ -113,9 +115,11 @@ impl Reranker for RerankerStruct {
         };
 
         let (tx, rx) = tokio::sync::oneshot::channel();
+        unsafe { pg_sys::BackgroundWorkerBlockSignals() };
         self.thread_pool.spawn(|| {
             let reranking = model.rerank(query, passages, false, None);
             tx.send(reranking).expect("Channel send failed");
+            signal::raise(Signal::SIGTERM);
         });
 
         match rx.await {
@@ -170,10 +174,13 @@ pub extern "C-unwind" fn background_main(arg: pg_sys::Datum) {
             Server::builder()
                 .add_service(RerankerServer::new(reranker))
                 .serve_with_incoming_shutdown(uds_stream, async {
+                    unsafe { pg_sys::BackgroundWorkerUnblockSignals() };
                     // wait_latch is not an async function and does not suspend
                     while BackgroundWorker::wait_latch(Some(Duration::from_secs(0))) {
+                        unsafe { pg_sys::BackgroundWorkerBlockSignals() };
                         // suspend so that other asyncs/threads can run
                         sleep(Duration::from_millis(500)).await;
+                        unsafe { pg_sys::BackgroundWorkerUnblockSignals() };
                     }
                 })
                 .await
