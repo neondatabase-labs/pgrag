@@ -115,11 +115,9 @@ impl Reranker for RerankerStruct {
         };
 
         let (tx, rx) = tokio::sync::oneshot::channel();
-        unsafe { pg_sys::BackgroundWorkerBlockSignals() };
         self.thread_pool.spawn(|| {
             let reranking = model.rerank(query, passages, false, None);
             tx.send(reranking).expect("Channel send failed");
-            signal::raise(Signal::SIGTERM);
         });
 
         match rx.await {
@@ -148,6 +146,7 @@ pub extern "C-unwind" fn background_main(arg: pg_sys::Datum) {
         .build()
         .expect_or_pg_err("Couldn't build tokio runtime for server")
         .block_on(async {
+            unsafe { pg_sys::BackgroundWorkerBlockSignals() };
             let path = socket_path!(pid);
             fs::remove_file(&path).unwrap_or_default(); // it's not an error if the file isn't there
             let uds = UnixListener::bind(&path).expect_or_pg_err(&format!("Couldn't create socket at {}", &path));
