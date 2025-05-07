@@ -22,8 +22,6 @@ use tokio::{
 use tokio_stream::wrappers::UnixListenerStream;
 use tonic::{transport::Server, Request, Response, Status};
 
-use nix::sys::signal::{self, Signal};
-
 // macros
 
 mconst!(ext_name, "rag_jina_reranker_v1_tiny_en");
